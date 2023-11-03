@@ -1,0 +1,6 @@
+bus:Universe,solati_h350,BUS
+truck:HD65,Porter2,Xcient,TRUCK,HR
+medium_vehicle:OBJ,NCAP_GVT
+standup_scooter:ElectricScooter
+motorbike:SportBike,Scooter
+bicycle:Bike

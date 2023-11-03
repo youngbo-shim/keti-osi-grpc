@@ -1,0 +1,11 @@
+<launch>
+  <!-- <param name="/use_sim_time" value="ture"/> -->
+  <rosparam command="load" file="$(find async_stream)/src/config/config.yaml" />
+  
+  <!-- <node pkg="tf" type="static_transform_publisher" name="base_link_to_ins_broadcaster" args="0 0 0 0 0 -0.7071068 0.7071068 base_link ins 1000"/>  
+  <node pkg="tf" type="static_transform_publisher" name="ins_to_cam1_broadcaster" args="0.0093 1.591 0.803 -0.6966372 0.0047467 -0.0009361 0.7174073 ins camera1 1000"/>
+  <node pkg="tf" type="static_transform_publisher" name="ins_to_cam3_broadcaster" args="0.0093 1.3523 1.0051 -0.694658 0.0138577 -0.016661 0.7190137 ins camera3 1000"/> -->
+  
+  <node pkg="async_stream" type="async_streaming_server_lidar" name="async_streaming_server_lidar" output="screen"/>
+</launch>
+

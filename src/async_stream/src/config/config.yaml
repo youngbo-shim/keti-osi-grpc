@@ -1,0 +1,8 @@
+camera_param:
+  - ["camera0/image_jpeg/compressed", "camera0"]
+  - ["camera1/image_jpeg/compressed", "camera1"]
+
+lidar_param:
+  - ["/lidar3D_0", "lidar0"]
+  - ["/lidar3D_1", "lidar1"]
+
