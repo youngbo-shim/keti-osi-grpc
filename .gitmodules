@@ -1,0 +1,3 @@
+[submodule "src/async_stream/open-simulation-interface"]
+	path = src/async_stream/open-simulation-interface
+	url = https://github.com/OpenSimulationInterface/open-simulation-interface.git
