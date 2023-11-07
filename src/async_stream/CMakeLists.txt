@@ -13,6 +13,11 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
   roslib
+  morai_msgs
+  cyber_perception_msgs
+  perception_msgs
+  utils
+  map
   tf
 )
 

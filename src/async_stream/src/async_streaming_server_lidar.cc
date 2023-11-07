@@ -5,8 +5,8 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <ros/package.h>
 #include <fstream>
+#include <queue>
 
 #include <grpc/grpc.h>
 #include <grpcpp/security/server_credentials.h>
@@ -16,12 +16,26 @@
 #include <grpcpp/alarm.h>
 
 #include <ros/ros.h>
+#include <ros/package.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <tf/transform_listener.h>
+#include <std_msgs/Bool.h>
 
 #include "sensorview_rpc.grpc.pb.h"
 
+#include "morai_msgs/EgoVehicleStatus.h"
+#include "morai_msgs/GPSMessage.h"
+#include "morai_msgs/CtrlCmd.h"
+#include "morai_msgs/MoraiEventCmdSrv.h"
+#include "morai_msgs/ObjectStatusList.h"
+#include "morai_msgs/GetTrafficLightStatus.h"
+#include "sensor_msgs/Imu.h"
+#include "math/math_utils.h"
+#include "conversion/coordinate/utm_conversion.h"
+#include "conversion/coordinate/tm_conversion.h"
+
+using namespace keti::common;
 
 using grpc::Server;
 // using grpc::ServerAsyncResponseWriter;
@@ -54,6 +68,7 @@ public:
     XmlRpc::XmlRpcValue camera_param, lidar_param;
     nh_.getParam("camera_param", camera_param);
     nh_.getParam("lidar_param", lidar_param);
+    nh_.getParam("data_path", hdmap_path_);
 
     std::cout << "camera_param : size = " << camera_param.size() << std::endl;
     if(camera_param.getType() == XmlRpc::XmlRpcValue::TypeArray &&
@@ -88,16 +103,21 @@ public:
       sub_camera_topics_[i] = nh_.subscribe<sensor_msgs::CompressedImage>(camera_param[i][0], 1, 
                                                                   boost::bind(&SensorViewRPCImpl::CallbackImage, this, _1, i));
       
-      InitTFTable(camera_param[i][1], i, CAMERA);
+      // InitTFTable(camera_param[i][1], i, CAMERA);
     }
 
     for (size_t i = 0; i < lidar_param.size(); i++){
       sub_lidar_topics_[i] = nh_.subscribe<sensor_msgs::PointCloud2>(lidar_param[i][0], 1, 
                                                                   boost::bind(&SensorViewRPCImpl::CallbackPointCloud, this, _1, i));
 
-      InitTFTable(lidar_param[i][1], i, LIDAR);  
+      // InitTFTable(lidar_param[i][1], i, LIDAR);  
     }
 
+    sub_morai_vehicle_state_ = nh_.subscribe("/Ego_topic", 1, &SensorViewRPCImpl::CallbackVehicleState, this);
+    sub_morai_gps_ = nh_.subscribe("/gps", 1, &SensorViewRPCImpl::CallbackGPS, this);
+    sub_morai_object_info_ = nh_.subscribe("/Object_topic", 1, &SensorViewRPCImpl::CallbackObjectInfo, this);
+    sub_morai_traffic_light_status_ = nh_.subscribe("/GetTrafficLightStatus", 1, &SensorViewRPCImpl::CallbackTrafficLight, this);
+    sub_is_changed_offset_ = nh_.subscribe("/is_changed_offset",1, &SensorViewRPCImpl::CallbackUpdateOffsetParams, this);
 
     for(int i = 0 ; i < camera_tf_buf_.size() ; i++){
       auto tf = camera_tf_buf_[i];
@@ -201,7 +221,8 @@ public:
   void HandleRpcs()
   {
     // Spawn a new CallData instance to serve new clients.
-    new CallData(&service_, cq_.get(), &camera_buf_, &lidar_buf_, &camera_tf_buf_, &lidar_tf_buf_);
+    new CallData(&service_, cq_.get(), &camera_buf_, &lidar_buf_, &camera_tf_buf_, &lidar_tf_buf_,
+                 &obj_buf_, &tl_buf_, &morai_tm_offset_, &ego_vehicle_heading_, &hdmap_path_);
     void *tag; // uniquely identifies a request.
     bool ok;
 
@@ -239,15 +260,37 @@ public:
   }
 
   void CallbackImage(const sensor_msgs::CompressedImageConstPtr& img, size_t idx){
-    // std::lock_guard<std::mutex> lock(camera_mutex_);
+    std::lock_guard<std::mutex> lock(camera_mutex_);
     std::cout << "start push img " << idx << std::endl;
     camera_buf_[idx].push_back(img);
     std::cout << "finish push img " << idx << std::endl;
   }
 
   void CallbackPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud, size_t idx){
-    // std::lock_guard<std::mutex> lock(lidar_mutex_);
+    std::lock_guard<std::mutex> lock(lidar_mutex_);
     lidar_buf_[idx].push_back(cloud);
+  }
+
+  void CallbackVehicleState(const morai_msgs::EgoVehicleStatus& vehicle_state){
+    ego_vehicle_heading_ = math::deg2rad(vehicle_state.heading);
+  }
+
+  void CallbackGPS(const morai_msgs::GPSMessage& msg){
+    morai_tm_offset_[0] = msg.eastOffset;
+    morai_tm_offset_[1] = msg.northOffset;
+  }
+
+  void CallbackObjectInfo(const morai_msgs::ObjectStatusListPtr& objs) {
+    obj_buf_.push(objs);
+  }
+
+  void CallbackTrafficLight(const morai_msgs::GetTrafficLightStatusPtr& traffic_light_status){
+    tl_buf_.push(traffic_light_status);
+  }
+
+  void CallbackUpdateOffsetParams(const std_msgs::Bool& check) {  
+    std::cout << "update offset" << std::endl;
+    nh_.getParam("data_path", hdmap_path_);
   }
 
   bool HasData(){
@@ -258,6 +301,11 @@ public:
     for(auto lidar_buf : lidar_buf_){
       if(!lidar_buf.empty()) return true;
     }
+
+    if(!tl_buf_.empty()) return true;
+
+    if(!obj_buf_.empty()) return true;
+    
     return false;
   }
 
@@ -273,9 +321,14 @@ private:
             std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> *camera_buf,
             std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf,
             std::vector<MountingPosition> *camera_tf_buf,
-            std::vector<MountingPosition> *lidar_tf_buf)
+            std::vector<MountingPosition> *lidar_tf_buf, 
+            std::queue<morai_msgs::ObjectStatusListPtr> *obj_buf,
+            std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf,
+            double(*morai_tm_offset)[2], double* ego_vehicle_heading, std::string* hdmap_path)
         : service_(service), cq_(cq), camera_buf_(camera_buf), lidar_buf_(lidar_buf), 
-          camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf), responder_(&ctx_), status_(CREATE)
+          camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf),
+          obj_buf_(obj_buf), tl_buf_(tl_buf), morai_tm_offset_(morai_tm_offset),
+          ego_vehicle_heading_(ego_vehicle_heading), hdmap_path_(hdmap_path), responder_(&ctx_), status_(CREATE)
     {
       num_writing_ = 0;
 
@@ -612,6 +665,299 @@ private:
             has_data_ = true;
           }
 
+          if(tl_buf_->size() > 0){
+            std::cout << "tl_buf_->size() : " << tl_buf_->size() << std::endl;
+            auto& sending_tl = tl_buf_->front();
+
+            auto osi_tls = morai_to_osi_matching_table_tl_[sending_tl->trafficLightType][sending_tl->trafficLightStatus];
+
+            for(auto osi_tl : osi_tls){
+              auto tl = reply_.mutable_global_ground_truth()->add_traffic_light();
+              tl->mutable_id()->set_value(osi_tl.id().value());
+              tl->mutable_classification()->set_color(osi_tl.classification().color());
+              tl->mutable_classification()->set_icon(osi_tl.classification().icon());
+              tl->mutable_classification()->set_mode(osi_tl.classification().mode());
+              tl->add_source_reference()->add_identifier(sending_tl->trafficLightIndex);
+            }
+
+            // for(auto osi_tl : reply_.global_ground_truth().traffic_light()){
+            //   std::cout << "id : " << osi_tl.id().value() << ", icon : " << osi_tl.classification().icon() 
+            //             << ", color : " << osi_tl.classification().color()
+            //             << ", mode : " << osi_tl.classification().mode() 
+            //             << ", morai tl id : " << osi_tl.source_reference(0).identifier(0) << std::endl;
+            // }
+
+            tl_buf_->pop();
+            has_data_ = true;
+          }
+
+          if(obj_buf_->size() > 0){
+            std::cout << "obj_buf_->size() : " << obj_buf_->size() << std::endl;
+            auto& sending_obj = obj_buf_->front();
+
+            std::cout << "hdmap path : " << *hdmap_path_ << std::endl;
+
+            CGeoCoordConv geo_conv;
+            double x_utm, y_utm, x_vel, y_vel, x_accel, y_accel;
+            if(hdmap_path_->substr(hdmap_path_->rfind("/")+1) == "Pangyo HD Map"){
+              geo_conv = CGeoCoordConv(GeoEllips::kGrs80, GeoSystem::kTmMid,
+                                      GeoEllips::kWgs84, GeoSystem::kUtm52);
+            }
+
+            else if(hdmap_path_->substr(hdmap_path_->rfind("/")+1) == "KATRI HD Map"){
+              geo_conv = CGeoCoordConv(GeoEllips::kWgs84, GeoSystem::kUtm52,
+                                      GeoEllips::kWgs84, GeoSystem::kUtm52);
+            }
+
+            if(sending_obj->npc_list.size() == 0 && sending_obj->pedestrian_list.size() == 0 && sending_obj->obstacle_list.size() == 0){
+              auto moving_obj = reply_.mutable_global_ground_truth()->add_moving_object();
+              auto stationary_obj = reply_.mutable_global_ground_truth()->add_stationary_object();
+
+              moving_obj->mutable_id()->set_value(0);
+              stationary_obj->mutable_id()->set_value(0);
+            }
+
+            std::vector<osi3::MovingObject> moving_objs;
+            std::vector<osi3::StationaryObject> stationary_objs;
+
+            double ego_heading = *ego_vehicle_heading_;
+            double morai_tm_x_offset = (*morai_tm_offset_)[0];
+            double morai_tm_y_offset = (*morai_tm_offset_)[1];
+
+            for(auto morai_obj : sending_obj->npc_list){
+              auto moving_obj = reply_.mutable_global_ground_truth()->add_moving_object();
+              moving_obj->mutable_id()->set_value(morai_obj.unique_id);
+              moving_obj->set_type(osi3::MovingObject::TYPE_VEHICLE);
+              moving_obj->mutable_vehicle_classification()->set_type(osi3::MovingObject::VehicleClassification::TYPE_MEDIUM_CAR);
+              // vehicle_type
+              for(auto search_obj : morai_to_osi_matching_table_obj_){
+                if(search_obj.second.type() != osi3::MovingObject::VehicleClassification::TYPE_BUS &&
+                  search_obj.second.type() != osi3::MovingObject::VehicleClassification::TYPE_HEAVY_TRUCK){
+                  continue;
+                }
+                if(morai_obj.name.find(search_obj.first.second) != std::string::npos){
+                  moving_obj->mutable_vehicle_classification()->set_type(search_obj.second.type());
+                  break;
+                }
+              }
+              // name
+              moving_obj->add_source_reference()->add_identifier(morai_obj.name);
+              // size (m)
+              moving_obj->mutable_base()->mutable_dimension()->set_length(morai_obj.size.x);
+              moving_obj->mutable_base()->mutable_dimension()->set_width(morai_obj.size.y);
+              moving_obj->mutable_base()->mutable_dimension()->set_height(morai_obj.size.z);
+
+              // position
+              geo_conv.Conv(morai_obj.position.x + morai_tm_x_offset,
+                            morai_obj.position.y + morai_tm_y_offset,
+                            x_utm, y_utm);
+              moving_obj->mutable_base()->mutable_position()->set_x(x_utm);
+              moving_obj->mutable_base()->mutable_position()->set_y(y_utm);
+              // moving_obj->mutable_base()->mutable_position()->set_z(morai_obj.position.z);
+
+              //heading (degree to rad)
+              double obj_heading = math::deg2rad(morai_obj.heading);
+              moving_obj->mutable_base()->mutable_orientation()->set_yaw(obj_heading);
+
+              // To Ego vehicle coordinate
+              // velocity
+              double local_heading = obj_heading - ego_heading;
+
+              double velocity_2d[2] = {math::kmh2ms(morai_obj.velocity.x), math::kmh2ms(morai_obj.velocity.y)};
+              x_vel = cos(local_heading)*velocity_2d[0]
+                    - sin(local_heading)*velocity_2d[1];
+              y_vel = sin(local_heading)*velocity_2d[0]
+                    + cos(local_heading)*velocity_2d[1];
+
+              // acceleration
+              double accel_2d[2] = {morai_obj.acceleration.x, morai_obj.acceleration.y};    
+              x_accel = cos(local_heading)*accel_2d[0]
+                    - sin(local_heading)*accel_2d[1];
+              y_accel = sin(local_heading)*accel_2d[0]
+                    + cos(local_heading)*accel_2d[1];
+
+              // To Global coordinate
+              // velocity
+              double tmp_x_vel = x_vel;
+              double tmp_y_vel = y_vel;
+
+              x_vel = cos(ego_heading)*tmp_x_vel
+                      -sin(ego_heading)*tmp_y_vel;
+
+              y_vel = sin(ego_heading)*tmp_x_vel
+                      +cos(ego_heading)*tmp_y_vel;
+
+              moving_obj->mutable_base()->mutable_velocity()->set_x(x_vel);
+              moving_obj->mutable_base()->mutable_velocity()->set_y(y_vel);
+                                              
+
+              double tmp_x_accel = x_accel;
+              double tmp_y_accel = y_accel;
+
+              x_accel = cos(ego_heading)*tmp_x_accel
+                        -sin(ego_heading)*tmp_y_accel;
+
+              y_accel = sin(ego_heading)*tmp_x_accel
+                        +cos(ego_heading)*tmp_y_accel;
+
+              moving_obj->mutable_base()->mutable_acceleration()->set_x(x_accel);
+              moving_obj->mutable_base()->mutable_acceleration()->set_y(y_accel);
+            }
+
+            for(auto morai_obj : sending_obj->pedestrian_list){
+              auto moving_obj = reply_.mutable_global_ground_truth()->add_moving_object();
+              moving_obj->mutable_id()->set_value(morai_obj.unique_id);
+              moving_obj->set_type(osi3::MovingObject::TYPE_PEDESTRIAN);
+              //name
+              moving_obj->add_source_reference()->add_identifier(morai_obj.name);
+              //size (m)
+              moving_obj->mutable_base()->mutable_dimension()->set_width(morai_obj.size.x);
+              moving_obj->mutable_base()->mutable_dimension()->set_length(morai_obj.size.y);
+              moving_obj->mutable_base()->mutable_dimension()->set_height(morai_obj.size.z);
+
+              // position
+              geo_conv.Conv(morai_obj.position.x + morai_tm_x_offset,
+                            morai_obj.position.y + morai_tm_y_offset,
+                            x_utm, y_utm);
+              moving_obj->mutable_base()->mutable_position()->set_x(x_utm);
+              moving_obj->mutable_base()->mutable_position()->set_y(y_utm);
+              // moving_obj->mutable_base()->mutable_position()->set_z(morai_obj.position.z);
+
+              //heading (degree to rad)
+              double obj_heading = math::deg2rad(morai_obj.heading);
+              moving_obj->mutable_base()->mutable_orientation()->set_yaw(obj_heading);
+
+              // To Ego vehicle coordinate
+              // velocity
+              double local_heading = obj_heading - ego_heading;
+
+              double velocity_2d[2] = {math::kmh2ms(morai_obj.velocity.x), math::kmh2ms(morai_obj.velocity.y)};
+              x_vel = cos(local_heading)*velocity_2d[0]
+                    - sin(local_heading)*velocity_2d[1];
+              y_vel = sin(local_heading)*velocity_2d[0]
+                    + cos(local_heading)*velocity_2d[1];
+
+              // acceleration
+              double accel_2d[2] = {morai_obj.acceleration.x, morai_obj.acceleration.y};    
+              x_accel = cos(local_heading)*accel_2d[0]
+                    - sin(local_heading)*accel_2d[1];
+              y_accel = sin(local_heading)*accel_2d[0]
+                    + cos(local_heading)*accel_2d[1];
+
+              // To Global coordinate
+              // velocity
+              double tmp_x_vel = x_vel;
+              double tmp_y_vel = y_vel;
+
+              x_vel = cos(ego_heading)*tmp_x_vel
+                      -sin(ego_heading)*tmp_y_vel;
+
+              y_vel = sin(ego_heading)*tmp_x_vel
+                      +cos(ego_heading)*tmp_y_vel;
+
+              moving_obj->mutable_base()->mutable_velocity()->set_x(x_vel);
+              moving_obj->mutable_base()->mutable_velocity()->set_y(y_vel);
+                                              
+
+              double tmp_x_accel = x_accel;
+              double tmp_y_accel = y_accel;
+
+              x_accel = cos(ego_heading)*tmp_x_accel
+                        -sin(ego_heading)*tmp_y_accel;
+
+              y_accel = sin(ego_heading)*tmp_x_accel
+                        +cos(ego_heading)*tmp_y_accel;
+
+              moving_obj->mutable_base()->mutable_acceleration()->set_x(x_accel);
+              moving_obj->mutable_base()->mutable_acceleration()->set_y(y_accel);
+            }
+
+            for(auto morai_obj : sending_obj->obstacle_list){
+              osi3::MovingObject::VehicleClassification moving_obj_type;
+              bool is_stationary_obj = true;
+              // type
+              for(auto search_obj : morai_to_osi_matching_table_obj_){
+                if(morai_obj.name.find(search_obj.first.second) != std::string::npos){
+                  // moving_obj_type.set_type(osi3::MovingObject::TYPE_VEHICLE);
+                  // moving_obj_type.mutable_vehicle_classification()->set_type(search_obj.second.type());
+                  moving_obj_type.set_type(search_obj.second.type());
+                  is_stationary_obj = false;
+                  break;
+                }
+              }
+              if(is_stationary_obj){
+                auto stationary_obj = reply_.mutable_global_ground_truth()->add_stationary_object();
+                // id
+                stationary_obj->mutable_id()->set_value(morai_obj.unique_id);
+                // name
+                stationary_obj->add_source_reference()->add_identifier(morai_obj.name);
+                // size (m)
+                stationary_obj->mutable_base()->mutable_dimension()->set_length(morai_obj.size.x);
+                stationary_obj->mutable_base()->mutable_dimension()->set_width(morai_obj.size.y);
+                stationary_obj->mutable_base()->mutable_dimension()->set_height(morai_obj.size.z);
+
+                // position
+                geo_conv.Conv(morai_obj.position.x + morai_tm_x_offset,
+                              morai_obj.position.y + morai_tm_y_offset,
+                              x_utm, y_utm);
+                stationary_obj->mutable_base()->mutable_position()->set_x(x_utm);
+                stationary_obj->mutable_base()->mutable_position()->set_y(y_utm);
+                // stationary_obj->mutable_base()->mutable_position()->set_z(morai_obj.position.z);
+
+                //heading (degree to rad)
+                stationary_obj->mutable_base()->mutable_orientation()->set_yaw(math::deg2rad(morai_obj.heading));
+              }
+              else{
+                auto moving_obj = reply_.mutable_global_ground_truth()->add_moving_object();
+                // id
+                moving_obj->mutable_id()->set_value(morai_obj.unique_id);
+                // name
+                moving_obj->add_source_reference()->add_identifier(morai_obj.name);
+                // size (m)
+                moving_obj->mutable_base()->mutable_dimension()->set_length(morai_obj.size.x);
+                moving_obj->mutable_base()->mutable_dimension()->set_width(morai_obj.size.y);
+                moving_obj->mutable_base()->mutable_dimension()->set_height(morai_obj.size.z);
+                // type
+                moving_obj->set_type(osi3::MovingObject::TYPE_VEHICLE);
+                moving_obj->mutable_vehicle_classification()->set_type(moving_obj_type.type());
+                // position
+                geo_conv.Conv(morai_obj.position.x + morai_tm_x_offset,
+                              morai_obj.position.y + morai_tm_y_offset,
+                              x_utm, y_utm);
+                moving_obj->mutable_base()->mutable_position()->set_x(x_utm);
+                moving_obj->mutable_base()->mutable_position()->set_y(y_utm);
+                // moving_obj->mutable_base()->mutable_position()->set_z(morai_obj.position.z);
+
+                //heading (degree to rad)
+                moving_obj->mutable_base()->mutable_orientation()->set_yaw(math::deg2rad(morai_obj.heading));
+              }
+            }
+
+            if(sending_obj->npc_list.size() != 0 || sending_obj->pedestrian_list.size() != 0 || sending_obj->obstacle_list.size() != 0){
+              for(auto check_test : reply_.global_ground_truth().moving_object()){
+                std::cout << "name : " << check_test.source_reference(0).identifier(0)
+                          << ", roll : " << check_test.base().orientation().roll()
+                          << ", pitch : " << check_test.base().orientation().pitch()
+                          << ", yaw : " << check_test.base().orientation().yaw()
+                          << ", vel_x : " << check_test.base().velocity().x()
+                          << ", vel_y : " << check_test.base().velocity().y()
+                          << ", vel_z : " << check_test.base().velocity().z()
+                          << ", type : " << check_test.type()
+                          << ", sub_type : " << check_test.vehicle_classification().type() << std::endl;
+              }
+
+              for(auto check_test : reply_.global_ground_truth().stationary_object()){
+                std::cout << "name : " << check_test.source_reference(0).identifier(0)
+                          << ", roll : " << check_test.base().orientation().roll()
+                          << ", pitch : " << check_test.base().orientation().pitch()
+                          << ", yaw : " << check_test.base().orientation().yaw() << std::endl;
+              }
+            }
+
+            obj_buf_->pop();
+            has_data_ = true;
+          }
+
           if ( has_data_){
             std::chrono::time_point<std::chrono::system_clock> now =
                   std::chrono::system_clock::now();
@@ -627,6 +973,10 @@ private:
 
             responder_.Write(reply_, this);
             std::cout << std::fixed << "[current] : " << current_nanoseconds << std::endl;
+            
+            std::chrono::duration<double> running_time = std::chrono::system_clock::now() - start;
+            std::cout.precision(3);
+            std::cout << "converting running time : " << running_time.count() * 1000 << "ms" << std::endl;
           }
           
           status_ = PROCESS;
@@ -672,6 +1022,11 @@ private:
     std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf_;
     std::vector<MountingPosition> *camera_tf_buf_;
     std::vector<MountingPosition> *lidar_tf_buf_;
+    double(*morai_tm_offset_)[2];
+    double* ego_vehicle_heading_;
+    std::string* hdmap_path_;
+    std::queue<morai_msgs::ObjectStatusListPtr> *obj_buf_;
+    std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf_;
 
     // The means to get back to the client.
     ServerAsyncWriter<SensorView> responder_;
@@ -695,16 +1050,25 @@ private:
   std::unique_ptr<Server> server_;
   std::string address_;
 
+  // Sensors
   std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> camera_buf_;
   std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> lidar_buf_;
   std::vector<MountingPosition> camera_tf_buf_;
   std::vector<MountingPosition> lidar_tf_buf_;
   std::mutex lidar_mutex_, camera_mutex_;
 
+  // Ground Truth
+  double morai_tm_offset_[2];
+  double ego_vehicle_heading_;
+  std::queue<morai_msgs::ObjectStatusListPtr> obj_buf_;
+  std::queue<morai_msgs::GetTrafficLightStatusPtr> tl_buf_;
+  std::string hdmap_path_;
+
   // ros
   ros::NodeHandle nh_;
   std::vector<ros::Subscriber> sub_camera_topics_;
   std::vector<ros::Subscriber> sub_lidar_topics_;
+  ros::Subscriber sub_morai_vehicle_state_, sub_morai_gps_, sub_morai_object_info_, sub_morai_traffic_light_status_, sub_is_changed_offset_;
 
 };
 
