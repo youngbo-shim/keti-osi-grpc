@@ -1,3 +1,6 @@
 [submodule "src/async_stream/open-simulation-interface"]
 	path = src/async_stream/open-simulation-interface
 	url = https://github.com/OpenSimulationInterface/open-simulation-interface.git
+[submodule "src/autoware_ai_messages"]
+	path = src/autoware_ai_messages
+	url = ehttps://github.com/autowarefoundation/autoware_ai_messages.git
