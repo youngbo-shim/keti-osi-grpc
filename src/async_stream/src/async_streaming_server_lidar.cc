@@ -254,6 +254,8 @@ public:
     if(!tl_buf_.empty()) return true;
 
     if(!obj_buf_.empty()) return true;
+
+    if(!ego_vehicle_state_buf_.empty()) return true;
     
     return false;
   }
