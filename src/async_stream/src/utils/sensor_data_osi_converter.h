@@ -1,0 +1,105 @@
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <thread>
+#include <fstream>
+#include <queue>
+
+#include <grpc/grpc.h>
+#include <grpcpp/security/server_credentials.h>
+#include <grpcpp/server.h>
+#include <grpcpp/server_builder.h>
+#include <grpcpp/server_context.h>
+#include <grpcpp/alarm.h>
+
+#include <ros/ros.h>
+#include <ros/package.h>
+#include <sensor_msgs/CompressedImage.h>
+#include <sensor_msgs/PointCloud2.h>
+#include <tf/transform_listener.h>
+#include <std_msgs/Bool.h>
+
+#include "sensorview_rpc.grpc.pb.h"
+
+#include "morai_msgs/EgoVehicleStatus.h"
+#include "morai_msgs/GPSMessage.h"
+#include "morai_msgs/CtrlCmd.h"
+#include "morai_msgs/MoraiEventCmdSrv.h"
+#include "morai_msgs/ObjectStatusList.h"
+#include "morai_msgs/GetTrafficLightStatus.h"
+#include "sensor_msgs/Imu.h"
+#include "math/math_utils.h"
+#include "conversion/coordinate/utm_conversion.h"
+#include "conversion/coordinate/tm_conversion.h"
+#include <autoware_msgs/VehicleStatus.h>
+
+using namespace keti::common;
+
+using grpc::Server;
+// using grpc::ServerAsyncResponseWriter;
+using grpc::ServerAsyncWriter;
+using grpc::ServerBuilder;
+using grpc::ServerCompletionQueue;
+using grpc::ServerContext;
+using grpc::Status;
+
+using osi3::Request;
+using osi3::SensorView;
+using osi3::SensorViewRPC;
+using osi3::MountingPosition;
+using osi3::HostVehicleData;
+using osi3::CameraSensorView;
+using osi3::LidarSensorView;
+using osi3::GroundTruth;
+
+using PhaseTable = std::unordered_map<int, std::vector<osi3::TrafficLight>>;
+using TypeTable = std::unordered_map<int, PhaseTable>;
+using ObjTable = std::map<std::pair<int, std::string>, osi3::MovingObject::VehicleClassification>;
+
+static constexpr unsigned int Hash(const char* str){
+  return str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * Hash(str + 1) : 8603;
+}
+
+class SensorDataOSIConverter {
+  public:
+
+    SensorDataOSIConverter();
+    ~SensorDataOSIConverter();
+    void CameraSensorToOSI(const sensor_msgs::CompressedImageConstPtr& img_ros, CameraSensorView* camera_osi,
+                           const MountingPosition& camera_mount_pose, const size_t& sensor_id);
+    void LidarSensorToOSI(const sensor_msgs::PointCloud2ConstPtr& lidar_ros, LidarSensorView* lidar_osi, 
+                          const MountingPosition& lidar_mount_pose, const size_t& num_of_rays, const size_t& sensor_id);
+    void TrafficLightsToOSI(const morai_msgs::GetTrafficLightStatusConstPtr& traffic_light_ros, osi3::TrafficLight* traffic_ligth_gt, osi3::TrafficLight& traffic_ligth_osi);
+    void TrafficLightIdMathching();
+    void TrafficLightMoraiToOSIMatching();
+    TypeTable GetMoraiToOSITrafficLightMatchingTable() { return morai_to_osi_matching_table_tl_; }
+    void ObjectMoraiToOSIMatching();
+    ObjTable GetMoraiToOSIObstacleMatchingTable() { return morai_to_osi_matching_table_obj_; }
+    void EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::ImuConstPtr& imu_ros, 
+                             const autoware_msgs::VehicleStatusConstPtr& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi);
+    double GetEgoVehicleHeading () { return ego_vehicle_heading_; }
+    double SetEgoVehicleHeading (double ege_vehicle_heading) { return ego_vehicle_heading_ = ege_vehicle_heading; }
+    void EmptyObstacleToOSI(osi3::MovingObject* moving_obstacle_osi,
+                            osi3::StationaryObject* stationary_obstacle_osi);
+    void NPCObstacleToOSI(const morai_msgs::ObjectStatus obstacle_ros, osi3::MovingObject* moving_obstacle_osi);
+    void PedObstacleToOSI(const morai_msgs::ObjectStatus obstacle_ros, osi3::MovingObject* moving_obstacle_osi);
+    void StaticObstacleToOSI(const morai_msgs::ObjectStatus obstacle_ros, osi3::StationaryObject* stationary_obstacle_osi);
+    void SetMoraiTMOffset(double (*morai_tm_offset)[2]) { morai_tm_offset_[0] = (*morai_tm_offset)[0], morai_tm_offset_[1] = (*morai_tm_offset)[1]; }
+    double* GetMoraiTMOffset(){ return morai_tm_offset_; }
+    void SetGeoCoordConv(const std::string* hdmap_path);
+    CGeoCoordConv GetGeoCoordConv() { return geo_conv_; }
+
+  private:
+  
+    std::unordered_map<std::string, std::vector<std::string>> id_table_;
+    TypeTable morai_to_osi_matching_table_tl_;
+    ObjTable morai_to_osi_matching_table_obj_;
+    double ego_vehicle_heading_;
+    std::string hdmap_path_;
+    double morai_tm_offset_[2];
+    CGeoCoordConv geo_conv_;
+
+};

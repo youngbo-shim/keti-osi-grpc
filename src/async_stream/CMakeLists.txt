@@ -19,6 +19,7 @@ find_package(catkin REQUIRED COMPONENTS
   utils
   map
   tf
+  autoware_msgs
 )
 
 catkin_package(
@@ -81,7 +82,8 @@ foreach(_target
   async_streaming_server async_streaming_client async_streaming_server_lidar async_streaming_client_lidar)
   add_executable(${_target}
     "src/${_target}.cc"
-    src/task/task_manager.cpp)
+    src/task/task_manager.cpp
+    src/utils/sensor_data_osi_converter.cpp)
   
   target_link_libraries(${_target}
     PUBLIC
