@@ -18,11 +18,15 @@
 #include <image_transport/image_transport.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <sensor_msgs/Imu.h>
 #include <std_msgs/Bool.h>
+#include "morai_msgs/EgoVehicleStatus.h"
+#include "morai_msgs/GPSMessage.h"
 #include "cyber_perception_msgs/PerceptionObstacles.h"
 #include "perception_msgs/TrafficLights.h"
 #include "perception_msgs/TrafficLight.h"
 #include "perception_msgs/TrafficSignalPhase.h"
+#include <tf/transform_listener.h>
 
 #include "sensorview_rpc.grpc.pb.h"
 #include "task/task.h"
@@ -34,6 +38,7 @@ using grpc::ClientAsyncResponseReader;
 using grpc::ClientContext;
 using grpc::CompletionQueue;
 using grpc::Status;
+using osi3::HostVehicleData;
 
 using google::protobuf::RepeatedPtrField;
 
@@ -113,6 +118,10 @@ public:
 
     pub_objs_ = nh_.advertise<cyber_perception_msgs::PerceptionObstacles>("/grpc/objects", 1);
 
+    pub_imu_ = nh_.advertise<sensor_msgs::Imu>("/grpc/imu", 1);
+    pub_gps_ = nh_.advertise<morai_msgs::GPSMessage>("/grpc/gps", 1);
+    pub_morai_ego_state_ = nh_.advertise<morai_msgs::EgoVehicleStatus>("/grpc/morai_ego_vehicle_state", 1);
+
     std::cout << "finished" << std::endl;
 
     TrafficLightIdMathching();
@@ -143,6 +152,9 @@ public:
     std::unordered_map<int, std::queue<std::future<std::pair<size_t,sensor_msgs::CompressedImage>>>> camera_res_table; // seq: 디버깅용 -> 빼도 상관없음
     std::queue<std::future<std::pair<size_t,perception_msgs::TrafficLights>>> tl_res_table;
     std::queue<std::future<std::pair<size_t,cyber_perception_msgs::PerceptionObstacles>>> obj_res_table;
+    std::queue<std::future<std::pair<size_t,morai_msgs::GPSMessage>>> gps_res_table;
+    std::queue<std::future<std::pair<size_t,sensor_msgs::Imu>>> imu_res_table;
+    std::queue<std::future<std::pair<size_t,morai_msgs::EgoVehicleStatus>>> morai_ego_state_res_table;
   };
 
   // move on to converting class later
@@ -447,7 +459,7 @@ public:
     // auto seq = msg->seq_;
 
     sensor_msgs::PointCloud2 cloud_msg;
-    cloud_msg.header.frame_id = "velodyne";
+    cloud_msg.header.frame_id = "lidar0";
     // cloud_msg.header.frame_id = "hero/lidar";
     cloud_msg.header.stamp = ros::Time::now();
     cloud_msg.width = lidar_sensor_view->view_configuration().directions_size();
@@ -519,6 +531,81 @@ public:
     // std::cout << "ProcCamera end camera : " << camera_id << std::endl;
 
     return std::make_pair(seq,img);
+  }
+
+  static std::pair<size_t, morai_msgs::GPSMessage> OSIToMoraiGpsSensor(std::shared_ptr<HostVehicleData>& gps_sensor_view, size_t gps_seq){
+    std::cout << "gps converting start: " << gps_seq << std::endl;
+    morai_msgs::GPSMessage gps_msg;
+    gps_msg.header.frame_id = "gps";
+    gps_msg.header.stamp = ros::Time::now();
+
+    gps_msg.latitude = gps_sensor_view->vehicle_motion().position().x();
+    gps_msg.longitude = gps_sensor_view->vehicle_motion().position().y();
+    gps_msg.altitude = gps_sensor_view->vehicle_motion().position().z();
+
+    // gps_msg.eastOffset = SensorConverter::utm_east_offset();
+    // gps_msg.northOffset = SensorConverter::utm_north_offset();
+    
+    std::cout << "gps converting end: " << gps_seq << std::endl;
+    return std::make_pair(gps_seq, gps_msg);
+    
+  }
+
+  static std::pair<size_t, morai_msgs::EgoVehicleStatus> OSIToEgoVehicleState(std::shared_ptr<HostVehicleData>& ego_vehicle_state_view, size_t ego_vehicle_state_seq){
+    std::cout << "OSIToEgoVehicleState converting start: " << ego_vehicle_state_seq << std::endl;
+
+    morai_msgs::EgoVehicleStatus ego_vehicle_state_msg;
+    ego_vehicle_state_msg.header.frame_id = "MoraiInfo";
+    ego_vehicle_state_msg.header.stamp = ros::Time::now();
+
+    ego_vehicle_state_msg.position.x = ego_vehicle_state_view->vehicle_motion().position().x();
+    ego_vehicle_state_msg.position.y = ego_vehicle_state_view->vehicle_motion().position().y();
+    ego_vehicle_state_msg.position.z = ego_vehicle_state_view->vehicle_motion().position().z();
+    ego_vehicle_state_msg.acceleration.x = ego_vehicle_state_view->vehicle_motion().acceleration().x();
+    ego_vehicle_state_msg.acceleration.y = ego_vehicle_state_view->vehicle_motion().acceleration().y();
+    ego_vehicle_state_msg.acceleration.z = ego_vehicle_state_view->vehicle_motion().acceleration().z();
+    ego_vehicle_state_msg.velocity.x = ego_vehicle_state_view->vehicle_motion().velocity().x();
+    ego_vehicle_state_msg.velocity.y = ego_vehicle_state_view->vehicle_motion().velocity().y();
+    ego_vehicle_state_msg.velocity.z = ego_vehicle_state_view->vehicle_motion().velocity().z();
+    ego_vehicle_state_msg.heading = ego_vehicle_state_view->vehicle_motion().orientation().yaw() * 180.0 / M_PI;
+    
+    std::cout << "OSIToEgoVehicleState converting end: " << ego_vehicle_state_seq << std::endl;
+    return std::make_pair(ego_vehicle_state_seq, ego_vehicle_state_msg);
+    
+  }
+  static std::pair<size_t,sensor_msgs::Imu> OSIToImuSensor(std::shared_ptr<HostVehicleData>& imu_sensor_view, size_t imu_seq){
+
+    std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
+    std::cout << "imu converting start: " << imu_seq << std::endl;
+
+    tf2::Quaternion quat;
+    quat.setRPY( imu_sensor_view->vehicle_motion().orientation().roll(),
+                        imu_sensor_view->vehicle_motion().orientation().pitch(),
+                        imu_sensor_view->vehicle_motion().orientation().yaw());
+
+    sensor_msgs::Imu imu_msg;
+    imu_msg.header.frame_id = "imu";
+    imu_msg.header.stamp = ros::Time::now();
+
+    imu_msg.orientation.x = quat.x();
+    imu_msg.orientation.y = quat.y();
+    imu_msg.orientation.z = quat.z();
+    imu_msg.orientation.w = quat.w();
+
+    imu_msg.angular_velocity.x = imu_sensor_view->vehicle_motion().orientation_rate().roll();
+    imu_msg.angular_velocity.y = imu_sensor_view->vehicle_motion().orientation_rate().pitch();
+    imu_msg.angular_velocity.z = imu_sensor_view->vehicle_motion().orientation_rate().yaw();
+
+    imu_msg.linear_acceleration.x = imu_sensor_view->vehicle_motion().acceleration().x();
+    imu_msg.linear_acceleration.y = imu_sensor_view->vehicle_motion().acceleration().y();
+    imu_msg.linear_acceleration.z = imu_sensor_view->vehicle_motion().acceleration().z();
+    
+    std::cout << "imu converting end: " << imu_seq << std::endl;
+
+    return std::make_pair(imu_seq, imu_msg);
+    // // std::chrono::duration<double> running_time = std::chrono::system_clock::now() - now;
+    // // std::cout.precision(3);
+    // imu_proc_val.set_value(imu_msg);
   }
 
   static std::pair<size_t,perception_msgs::TrafficLights> ProcTL(std::shared_ptr<RepeatedPtrField<osi3::TrafficLight>> osi_tls,
@@ -676,7 +763,7 @@ public:
 
   void ConvertThread(){ 
     std::unordered_map<int,size_t> lidar_seq_table, camera_seq_table;
-    size_t tl_seq = 0, obj_seq = 0;
+    size_t tl_seq = 0, obj_seq = 0, ego_vehicle_state_seq = 0;
     
     for(int i = 0 ; i < num_of_lidar_ ; i++){
       lidar_seq_table[i] = 0;  
@@ -735,6 +822,17 @@ public:
         obj_seq++;
       }
 
+      if(sensor_view.host_vehicle_data().vehicle_motion().has_acceleration()){
+        auto imu_sensor_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
+        auto gps_sensor_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
+        auto ego_vehicle_state_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
+        msg_result_.imu_res_table.push(keti::task::Async(&SensorViewClient::OSIToImuSensor, imu_sensor_view, ego_vehicle_state_seq));
+        msg_result_.gps_res_table.push(keti::task::Async(&SensorViewClient::OSIToMoraiGpsSensor, gps_sensor_view, ego_vehicle_state_seq));
+        msg_result_.morai_ego_state_res_table.push(keti::task::Async(&SensorViewClient::OSIToEgoVehicleState, ego_vehicle_state_view, ego_vehicle_state_seq));
+        ego_vehicle_state_seq++;
+      }
+
+      // }
       // std::chrono::duration<double> running_time = std::chrono::system_clock::now() - now;
       // std::cout.precision(3);
       // std::cout << std::fixed << "converting running time : " << running_time.count() * 1000 << "ms" << std::endl;
@@ -769,21 +867,33 @@ public:
           continue;
         }
 
-        std::cout << "try to publish lidar topic : " << i << std::endl;
-        auto msg = msg_result_.lidar_res_table[i].front().get();
-        std::cout << "check lidar id : " << i << " seq : " << msg.first << std::endl; 
-        
-        pub_clouds_[i].publish(msg.second);
-
-        std::cout << "publish finished lidar id : " << i << " seq : " << msg.first << std::endl;
-
-        {
-          std::cout << "lidar " << i << " erase start" << std::endl;
-          msg_result_.lidar_res_table[i].pop();
-          std::cout << "lidar " << i << " erase end" << std::endl;
+        std::cout << "before pub lidar.size(): " << msg_result_.lidar_res_table[i].size() << "\n";
+        // auto msg = msg_result_.imu_res_table.front().get();
+        try {
+          auto msg = msg_result_.lidar_res_table[i].front().get();
+          
+          pub_clouds_[i].publish(msg.second);
+          {
+            msg_result_.lidar_res_table[i].pop();
+          }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Lidar)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Lidar): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Lidar): " << e.what() << std::endl;
         }
 
-        std::cout << "result size : " << msg_result_.lidar_res_table[i].size() << std::endl;
+        std::cout << "after pub lidar.size(): " << msg_result_.lidar_res_table[i].size() << "\n";
+
+        // auto msg = msg_result_.lidar_res_table[i].front().get();
+        
+        // pub_clouds_[i].publish(msg.second);
+        // {
+        //   msg_result_.lidar_res_table[i].pop();
+        // }
       }
 
       for(int i = 0 ; i < num_of_camera_ ; i++){
@@ -795,61 +905,171 @@ public:
           continue;
         }
 
-        std::cout << "try to publish camera topic : " << i << std::endl;
-        auto msg = msg_result_.camera_res_table[i].front().get();
-        std::cout << "check camera id : " << i << " seq : " << msg.first << std::endl; 
-        
-        pub_imgs_[i].publish(msg.second);
-
-        std::cout << "publish finished camera id : " << i << " seq : " << msg.first << std::endl;
-
-        {
-          std::cout << "camera " << i << " erase start" << std::endl;
-          msg_result_.camera_res_table[i].pop();
-          std::cout << "camera " << i << " erase end" << std::endl;
+        std::cout << "before pub img.size(): " << msg_result_.camera_res_table[i].size() << "\n";
+        // auto msg = msg_result_.imu_res_table.front().get();
+        try {
+          auto msg = msg_result_.camera_res_table[i].front().get();
+          
+          pub_imgs_[i].publish(msg.second);
+          {
+            msg_result_.camera_res_table[i].pop();
+          }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Image)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Image): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Image): " << e.what() << std::endl;
         }
 
-        std::cout << "result size : " << msg_result_.camera_res_table[i].size() << std::endl;
+        std::cout << "after pub img.size(): " << msg_result_.camera_res_table[i].size() << "\n";
+        // auto msg = msg_result_.camera_res_table[i].front().get();
+        // pub_imgs_[i].publish(msg.second);
+        // {
+        //   msg_result_.camera_res_table[i].pop();
+        // }
+
       }
 
       if(msg_result_.tl_res_table.size() != 0){
-        std::cout << "try to publish tl topic "<< std::endl;
-        auto msg = msg_result_.tl_res_table.front().get();
-        std::cout << "check tl seq : " << msg.first << std::endl; 
-        
-        pub_tls_.publish(msg.second);
-
-        std::cout << "tl publish finished seq : " << msg.first << std::endl;
-
-        {
-          std::cout << "tl erase start" << std::endl;
-          msg_result_.tl_res_table.pop();
-          std::cout << "tl erase end" << std::endl;
+        std::cout << "before pub tl.size(): " << msg_result_.tl_res_table.size() << "\n";
+        // auto msg = msg_result_.imu_res_table.front().get();
+        try {
+          auto msg = msg_result_.tl_res_table.front().get();
+          pub_tls_.publish(msg.second);
+          {
+            msg_result_.tl_res_table.pop();
+          }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Traffic)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Traffic): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Traffic): " << e.what() << std::endl;
         }
 
-        std::cout << "result size : " << msg_result_.tl_res_table.size() << std::endl;
+        std::cout << "after pub tl.size(): " << msg_result_.tl_res_table.size() << "\n";
+
+        // auto msg = msg_result_.tl_res_table.front().get();
+        
+        // pub_tls_.publish(msg.second);
+
+        // {
+        //   msg_result_.tl_res_table.pop();
+        // }
+
 
       }
 
       if(msg_result_.obj_res_table.size() != 0){
-        std::cout << "try to publish obj topic "<< std::endl;
-        auto msg = msg_result_.obj_res_table.front().get();
-        std::cout << "check obj seq : " << msg.first << std::endl; 
-        
-        pub_objs_.publish(msg.second);
 
-        std::cout << "obj publish finished seq : " << msg.first << std::endl;
-
-        {
-          std::cout << "obj erase start" << std::endl;
-          msg_result_.obj_res_table.pop();
-          std::cout << "obj erase end" << std::endl;
+        std::cout << "before pub obj.size(): " << msg_result_.obj_res_table.size() << "\n";
+        // auto msg = msg_result_.imu_res_table.front().get();
+        try {
+          auto msg = msg_result_.obj_res_table.front().get();
+          pub_objs_.publish(msg.second);
+          {
+            msg_result_.obj_res_table.pop();
+          }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Obstacle)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Obstacle): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Obstacle): " << e.what() << std::endl;
         }
 
-        std::cout << "result size : " << msg_result_.obj_res_table.size() << std::endl;
+        std::cout << "after pub obj.size(): " << msg_result_.obj_res_table.size() << "\n";
+
+        // auto msg = msg_result_.obj_res_table.front().get();
+        
+        // pub_objs_.publish(msg.second);
+
+        // {
+        //   msg_result_.obj_res_table.pop();
+        // }
+
 
       }
 
+      if(msg_result_.imu_res_table.size() != 0){
+        std::cout << "before pub imu.size(): " << msg_result_.imu_res_table.size() << "\n";
+        // auto msg = msg_result_.imu_res_table.front().get();
+        try {
+            auto msg = msg_result_.imu_res_table.front().get();
+            pub_imu_.publish(msg.second);
+            {
+              msg_result_.imu_res_table.pop();
+            }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Imu)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Imu): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Imu): " << e.what() << std::endl;
+        }
+
+        std::cout << "after pub imu.size(): " << msg_result_.imu_res_table.size() << "\n";
+      }
+
+      if(msg_result_.gps_res_table.size() != 0){
+        std::cout << "before pub gps.size(): " << msg_result_.gps_res_table.size() << "\n";
+        try {
+            auto msg = msg_result_.gps_res_table.front().get();
+            pub_gps_.publish(msg.second);
+            {
+              msg_result_.gps_res_table.pop();
+            }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(gps)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(gps): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(gps): " << e.what() << std::endl;
+        }
+
+        // auto msg = msg_result_.gps_res_table.front().get();
+        // pub_gps_.publish(msg.second);
+        // {
+        //   msg_result_.gps_res_table.pop();
+        // }
+        std::cout << "after pub gps.size(): " << msg_result_.gps_res_table.size() << "\n";
+      }
+
+      if(msg_result_.morai_ego_state_res_table.size() != 0){
+        std::cout << "before pub morai ego state.size(): " << msg_result_.morai_ego_state_res_table.size() << "\n";
+        try {
+            auto msg = msg_result_.morai_ego_state_res_table.front().get();
+            pub_morai_ego_state_.publish(msg.second);
+            {
+              msg_result_.morai_ego_state_res_table.pop();
+            }
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(ego state)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(ego state): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(ego state): " << e.what() << std::endl;
+        }
+        // auto msg = msg_result_.morai_ego_state_res_table.front().get();
+        // pub_morai_ego_state_.publish(msg.second);
+        // {
+        //   msg_result_.morai_ego_state_res_table.pop();
+        // }
+        std::cout << "after pub morai ego state.size(): " << msg_result_.morai_ego_state_res_table.size() << "\n";
+      }            
     }
   }
 
@@ -883,7 +1103,7 @@ private:
   // ros
   ros::NodeHandle nh_;
   std::vector<ros::Publisher> pub_imgs_, pub_clouds_;
-  ros::Publisher pub_tls_, pub_objs_;
+  ros::Publisher pub_tls_, pub_objs_, pub_imu_, pub_gps_, pub_morai_ego_state_;
   int num_of_camera_, num_of_lidar_;
   ros::Subscriber sub_is_changed_offset_;
 
