@@ -4,6 +4,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <radar_msgs/RadarScan.h>
 #include "cyber_perception_msgs/PerceptionObstacles.h"
 #include "perception_msgs/TrafficLights.h"
 #include "perception_msgs/TrafficLight.h"
@@ -11,12 +12,15 @@
 
 #include "hdmap.h"
 
+#define SPEED_OF_LIGHT 299792458
+
 using google::protobuf::RepeatedPtrField;
 
 using osi3::Request;
 using osi3::SensorView;
 using osi3::CameraSensorView;
 using osi3::LidarSensorView;
+using osi3::RadarSensorView;
 using osi3::SensorViewRPC;
 using osi3::MovingObject;
 using osi3::StationaryObject;
@@ -33,6 +37,22 @@ public:
   }
 
   ~KetiROSConverter() = default;
+
+  void RadarOSIToGeneral(RadarSensorView& radar_osi,
+                        std::vector<radar_msgs::RadarReturn>* radarreturns){
+    float radar_frequency; // Need to know Radar frequency
+    for (auto reflection : radar_osi.reflection()){
+      radar_msgs::RadarReturn radar_obj;    
+
+      radar_obj.range = reflection.time_of_flight() * SPEED_OF_LIGHT;
+      radar_obj.azimuth = reflection.source_horizontal_angle();
+      radar_obj.elevation = reflection.source_vertical_angle();
+      radar_obj.doppler_velocity = reflection.doppler_shift() * SPEED_OF_LIGHT / radar_frequency;
+      radar_obj.amplitude = reflection.signal_strength();
+
+      radarreturns->push_back(radar_obj);
+    }
+  }
 
   void TrafficLightIdMathching(){
     std::string csv_path, line, morai_id, keti_id, temp_string;         

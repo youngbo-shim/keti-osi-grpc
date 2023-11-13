@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   morai_msgs
   cyber_perception_msgs
   perception_msgs
+  geometry_msgs
   utils
   map
   tf

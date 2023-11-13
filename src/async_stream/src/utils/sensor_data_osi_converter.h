@@ -19,11 +19,13 @@
 #include <ros/package.h>
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/PointCloud2.h>
+#include <radar_msgs/RadarScan.h>
 #include <tf/transform_listener.h>
 #include <std_msgs/Bool.h>
 
 #include "sensorview_rpc.grpc.pb.h"
 
+#include "morai_msgs/RadarDetections.h"
 #include "morai_msgs/EgoVehicleStatus.h"
 #include "morai_msgs/GPSMessage.h"
 #include "morai_msgs/CtrlCmd.h"
@@ -35,6 +37,8 @@
 #include "conversion/coordinate/utm_conversion.h"
 #include "conversion/coordinate/tm_conversion.h"
 #include <autoware_msgs/VehicleStatus.h>
+
+#define SPEED_OF_LIGHT 299792458
 
 using namespace keti::common;
 
@@ -53,6 +57,7 @@ using osi3::MountingPosition;
 using osi3::HostVehicleData;
 using osi3::CameraSensorView;
 using osi3::LidarSensorView;
+using osi3::RadarSensorView;
 using osi3::GroundTruth;
 
 using PhaseTable = std::unordered_map<int, std::vector<osi3::TrafficLight>>;
@@ -72,6 +77,11 @@ class SensorDataOSIConverter {
                            const MountingPosition& camera_mount_pose, const size_t& sensor_id);
     void LidarSensorToOSI(const sensor_msgs::PointCloud2ConstPtr& lidar_ros, LidarSensorView* lidar_osi, 
                           const MountingPosition& lidar_mount_pose, const size_t& num_of_rays, const size_t& sensor_id);
+    void RadarSensorToOSI(morai_msgs::RadarDetections& radardetections, RadarSensorView* radar_osi,
+                          const MountingPosition& radar_mount_pose, const size_t& sensor_id);
+    void RadarSensorToOSI(radar_msgs::RadarScan& radarscans, RadarSensorView* radar_osi,
+                          const geometry_msgs::PoseStamped::ConstPtr& radar_mount_pose, const size_t& sensor_id);
+
     void TrafficLightsToOSI(const morai_msgs::GetTrafficLightStatusConstPtr& traffic_light_ros, osi3::TrafficLight* traffic_ligth_gt, osi3::TrafficLight& traffic_ligth_osi);
     void TrafficLightIdMathching();
     void TrafficLightMoraiToOSIMatching();
@@ -93,7 +103,6 @@ class SensorDataOSIConverter {
     CGeoCoordConv GetGeoCoordConv() { return geo_conv_; }
 
   private:
-  
     std::unordered_map<std::string, std::vector<std::string>> id_table_;
     TypeTable morai_to_osi_matching_table_tl_;
     ObjTable morai_to_osi_matching_table_obj_;
@@ -101,5 +110,4 @@ class SensorDataOSIConverter {
     std::string hdmap_path_;
     double morai_tm_offset_[2];
     CGeoCoordConv geo_conv_;
-
 };

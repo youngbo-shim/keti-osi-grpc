@@ -89,6 +89,89 @@ void SensorDataOSIConverter::LidarSensorToOSI(const sensor_msgs::PointCloud2Cons
   }
 }
 
+// Radar
+void SensorDataOSIConverter::RadarSensorToOSI(morai_msgs::RadarDetections& radardetections,
+                                              RadarSensorView* radar_osi,
+                                              const MountingPosition& radar_mount_pose,
+                                              const size_t& sensor_id){
+  // 1. RadarSensorViewConfiguration
+  auto radar_view_configuration = radar_osi->mutable_view_configuration();
+  
+  radar_view_configuration->mutable_sensor_id()->set_value(sensor_id);
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_x(radar_mount_pose.position().x());
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_y(radar_mount_pose.position().y());  
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_z(radar_mount_pose.position().z());
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_roll(radar_mount_pose.orientation().roll());
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_pitch(radar_mount_pose.orientation().pitch());
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_yaw(radar_mount_pose.orientation().yaw());
+
+  // 2. Reflection
+  float x_l, y_l, z_l, time_of_flight;
+  for (auto radar_obj : radardetections.detections){
+    auto reflection = radar_osi->add_reflection();
+
+    reflection->set_signal_strength(radar_obj.amplitude);
+
+    time_of_flight = 0.0;
+    x_l = std::abs(radar_obj.position.x);
+    y_l = std::abs(radar_obj.position.y);
+    z_l = std::abs(radar_obj.position.z);
+
+    time_of_flight = std::sqrt(x_l*x_l + y_l*y_l + z_l*z_l) / SPEED_OF_LIGHT;
+    reflection->set_time_of_flight(time_of_flight);
+    reflection->set_doppler_shift(0);
+    reflection->set_source_horizontal_angle(radar_obj.azimuth*M_PI / 180);
+
+    auto elevation_rad = atan2(radar_mount_pose.position().z(), radar_mount_pose.position().y());
+    reflection->set_source_vertical_angle(elevation_rad);
+  }
+}
+
+void SensorDataOSIConverter::RadarSensorToOSI(radar_msgs::RadarScan& radarscans,
+                                              RadarSensorView* radar_osi,
+                                              const geometry_msgs::PoseStamped::ConstPtr& radar_mount_pose,
+                                              const size_t& sensor_id){
+
+  // 1. RadarSensorViewConfiguration
+  auto radar_view_configuration = radar_osi->mutable_view_configuration();
+  
+  radar_view_configuration->mutable_sensor_id()->set_value(sensor_id);
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_x(radar_mount_pose->pose.position.x);
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_y(radar_mount_pose->pose.position.y);  
+  radar_view_configuration->mutable_mounting_position()->mutable_position()->set_z(radar_mount_pose->pose.position.z);
+
+  tf::Quaternion q(
+    radar_mount_pose->pose.orientation.x,
+    radar_mount_pose->pose.orientation.y,
+    radar_mount_pose->pose.orientation.z,
+    radar_mount_pose->pose.orientation.w   
+  );
+  tf::Matrix3x3 m(q);
+  double roll, pitch, yaw;
+  m.getRPY(roll, pitch, yaw);
+
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_roll(roll);
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_pitch(pitch);
+  radar_view_configuration->mutable_mounting_position()->mutable_orientation()->set_yaw(yaw);
+
+  // 2. Reflection
+  float time_of_flight, doppler_shift, radar_frequency;
+  for (auto radar_obj : radarscans.returns){
+    auto reflection = radar_osi->add_reflection();
+
+    reflection->set_signal_strength(radar_obj.amplitude);
+
+    time_of_flight = radar_obj.range / SPEED_OF_LIGHT;
+    reflection->set_time_of_flight(time_of_flight);
+
+    doppler_shift = radar_obj.doppler_velocity * radar_frequency / SPEED_OF_LIGHT;
+    reflection->set_doppler_shift(doppler_shift);
+
+    reflection->set_source_horizontal_angle(radar_obj.azimuth);
+    reflection->set_source_vertical_angle(radar_obj.elevation);
+  }
+}
+
 // void SensorDataOSIConverter::TrafficLightsToOSI(const morai_msgs::GetTrafficLightStatusConstPtr& traffic_light_ros, GroundTruth* traffic_ligth_osi, const ){
 void SensorDataOSIConverter::TrafficLightsToOSI(const morai_msgs::GetTrafficLightStatusConstPtr& traffic_light_ros, osi3::TrafficLight* traffic_ligth_gt, osi3::TrafficLight& traffic_ligth_osi) {
   traffic_ligth_gt->mutable_id()->set_value(traffic_ligth_osi.id().value());
