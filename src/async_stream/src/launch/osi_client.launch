@@ -1,0 +1,37 @@
+<launch>
+  <arg name="hdmap_from" default="NGII"/>
+  <arg name="data_path" default="$(find map)/hd_map_data/KATRI HD Map" />
+  <arg name="link_filename" default="A2_LINK"/>
+  <arg name="node_filename" default="A1_NODE"/>
+  <arg name="lane_filename" default="B2_SURFACELINEMARK"/>
+  <arg name="speedbump_filename" default="C4_SPEEDBUMP"/>
+  <arg name="safetysign_filename" default="B1_SAFETYSIGN"/>
+  <arg name="surfacemark_filename" default="B2_SURFACEMARK"/>
+  <arg name="parkinglot_filename" default="A5_PARKINGLOT"/>
+  <arg name="drivewaysection_filename" default="A3_DRIVEWAYSECTION"/>
+  <arg name="trafficlight_filename" default="C1_TRAFFICLIGHT"/>
+  <arg name="postpoint_filename" default="C6_POSTPOINT"/>
+  <arg name="vehicleprotectionsafety_filename" default="C3_VEHICLEPROTECTIONSAFETY"/>
+  <arg name="heightbarrier_filename" default="C5_HEIGHTBARRIER"/>
+  <arg name="intersection_filename" default="B4_INTERSECTION"/>
+
+  <rosparam command="load" file="$(find async_stream)/src/config/config.yaml" />
+  
+  <node pkg="async_stream" type="osi_bridge_main" name="osi_bridge_main" output="screen"/>
+    <param name="hdmap_from" value="$(arg hdmap_from)"/>
+    <param name="data_path" value="$(arg data_path)"/>
+    <param name="lane_filename" value="$(arg lane_filename)"/>
+    <param name="link_filename" value="$(arg link_filename)"/>
+    <param name="node_filename" value="$(arg node_filename)"/>
+    <param name="speedbump_filename" value="$(arg speedbump_filename)"/>
+    <param name="safetysign_filename" value="$(arg safetysign_filename)"/>
+    <param name="surfacemark_filename" value="$(arg surfacemark_filename)"/>
+    <param name="parkinglot_filename" value="$(arg parkinglot_filename)"/>
+    <param name="drivewaysection_filename" value="$(arg drivewaysection_filename)"/>
+    <param name="trafficlight_filename" value="$(arg trafficlight_filename)"/>
+    <param name="postpoint_filename" value="$(arg postpoint_filename)"/>
+    <param name="vehicleprotectionsafety_filename" value="$(arg vehicleprotectionsafety_filename)"/>
+    <param name="heightbarrier_filename" value="$(arg heightbarrier_filename)"/>
+    <param name="intersection_filename" value="$(arg intersection_filename)"/>
+    
+</launch>

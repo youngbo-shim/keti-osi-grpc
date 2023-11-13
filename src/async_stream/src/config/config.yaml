@@ -1,3 +1,7 @@
+host_name: "localhost:50051"
+
+bridge_name: "keti"
+
 camera_param:
   - ["camera0/image_jpeg/compressed", "camera0"]
   - ["camera1/image_jpeg/compressed", "camera1"]

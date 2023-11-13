@@ -79,7 +79,7 @@ target_link_libraries(sensorview_grpc_proto
 )
 
 foreach(_target
-  async_streaming_server async_streaming_client async_streaming_server_lidar async_streaming_client_lidar)
+  async_streaming_server_lidar osi_bridge_main)
   add_executable(${_target}
     "src/${_target}.cc"
     src/task/task_manager.cpp
