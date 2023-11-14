@@ -84,7 +84,9 @@ foreach(_target
   add_executable(${_target}
     "src/${_target}.cc"
     src/task/task_manager.cpp
-    src/utils/sensor_data_osi_converter.cpp)
+    src/utils/sensor_data_osi_converter.cpp
+    src/autoware_ros_bridge.cc
+    src/autoware_ros_converter.cc)
   
   target_link_libraries(${_target}
     PUBLIC

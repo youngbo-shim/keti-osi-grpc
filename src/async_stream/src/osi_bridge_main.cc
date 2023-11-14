@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 
 #include "keti_ros_bridge.cc"
-#include "autoware_ros_bridge.cc"
+#include "autoware_ros_bridge.h"
 
 
 int main(int argc, char** argv){
