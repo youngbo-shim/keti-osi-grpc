@@ -10,3 +10,6 @@ lidar_param:
   - ["/lidar3D_0", "lidar0"]
   - ["/lidar3D_1", "lidar1"]
 
+radar_param:
+  - ["/radar0", "radar0"]
+  - ["/radar1", "radar1"]

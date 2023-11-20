@@ -5,9 +5,10 @@ class SensorViewRPCImpl final
 public:
   explicit SensorViewRPCImpl(std::string address) : address_(address) {    
 
-    XmlRpc::XmlRpcValue camera_param, lidar_param;
+    XmlRpc::XmlRpcValue camera_param, lidar_param, radar_param;
     nh_.getParam("camera_param", camera_param);
     nh_.getParam("lidar_param", lidar_param);
+    nh_.getParam("radar_param", radar_param);
     nh_.getParam("data_path", hdmap_path_);
 
     std::cout << "camera_param : size = " << camera_param.size() << std::endl;
@@ -31,13 +32,29 @@ public:
         std::cout << "\n";
       }
     }
+
+    std::cout << "radar_param : size = " << radar_param.size() << std::endl;
+    if(radar_param.getType() == XmlRpc::XmlRpcValue::TypeArray &&
+       radar_param.size() > 0){
+      for(int i = 0 ; i < radar_param.size() ; i++){
+        for(int j = 0 ; j < radar_param[i].size() ; j++){
+          std::cout << radar_param[i][j] << ", ";
+        }
+        std::cout << "\n";
+      }
+    }
   
     camera_buf_.resize(camera_param.size());
     lidar_buf_.resize(lidar_param.size());
+    radar_buf_.resize(radar_param.size());
+
     sub_camera_topics_.resize(camera_param.size());
     sub_lidar_topics_.resize(lidar_param.size());
+    sub_radar_topics_.resize(radar_param.size());
+
     camera_tf_buf_.resize(camera_param.size());
     lidar_tf_buf_.resize(lidar_param.size());
+    radar_tf_buf_.resize(radar_param.size());
   
     for (size_t i = 0; i < camera_param.size(); i++){
       sub_camera_topics_[i] = nh_.subscribe<sensor_msgs::CompressedImage>(camera_param[i][0], 1, 
@@ -51,6 +68,12 @@ public:
                                                                   boost::bind(&SensorViewRPCImpl::CallbackPointCloud, this, _1, i));
 
       InitTFTable(lidar_param[i][1], i, LIDAR);  
+    }
+
+    for (size_t i = 0; i < radar_param.size(); i++){
+      sub_radar_topics_[i] = nh_.subscribe<morai_msgs::RadarDetections>(radar_param[i][0], 1, 
+                                                                  boost::bind(&SensorViewRPCImpl::CallbackRadarDetections, this, _1, i));
+      InitTFTable(radar_param[i][1], i, RADAR);
     }
 
     sub_morai_vehicle_state_ = nh_.subscribe("/Ego_topic", 1, &SensorViewRPCImpl::CallbackVehicleState, this);
@@ -94,7 +117,8 @@ public:
 
   enum SensorType{
     CAMERA = 1,
-    LIDAR = 2
+    LIDAR = 2,
+    RADAR = 3
   };
 
   void InitTFTable(std::string sensor_frame_id, size_t idx, int type){
@@ -130,6 +154,10 @@ public:
           lidar_tf_buf_[idx] = tf;
         }
 
+        if(type == RADAR){
+          radar_tf_buf_[idx] = tf;
+        }
+
         is_init_trans = true;  
       }
       catch (tf::TransformException &ex) {
@@ -163,7 +191,8 @@ public:
   void HandleRpcs()
   {
     // Spawn a new CallData instance to serve new clients.
-    new CallData(&service_, cq_.get(), &camera_buf_, &lidar_buf_, &camera_tf_buf_, &lidar_tf_buf_,
+    new CallData(&service_, cq_.get(), &camera_buf_, &lidar_buf_, &radar_buf_,
+                 &camera_tf_buf_, &lidar_tf_buf_, &radar_tf_buf_,
                  &obj_buf_, &tl_buf_, &ego_vehicle_state_buf_, &imu_msg_, &autoware_vehicle_state_,
                  &morai_tm_offset_, &ego_vehicle_heading_, &hdmap_path_);
     void *tag; // uniquely identifies a request.
@@ -212,6 +241,11 @@ public:
     lidar_buf_[idx].push_back(cloud);
   }
 
+  void CallbackRadarDetections(const morai_msgs::RadarDetectionsConstPtr& detections, size_t idx){
+    std::lock_guard<std::mutex> lock(radar_mutex_);
+    radar_buf_[idx].push_back(*detections);
+  }
+
   void CallbackVehicleState(const morai_msgs::EgoVehicleStatusConstPtr& vehicle_state){
     ego_vehicle_state_buf_.push(vehicle_state);
   }
@@ -251,6 +285,10 @@ public:
       if(!lidar_buf.empty()) return true;
     }
 
+    for(auto radar_buf : radar_buf_){
+      if(!radar_buf.empty()) return true;
+    }
+
     if(!tl_buf_.empty()) return true;
 
     if(!obj_buf_.empty()) return true;
@@ -271,16 +309,18 @@ private:
     CallData(SensorViewRPC::AsyncService *service, ServerCompletionQueue *cq,
             std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> *camera_buf,
             std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf,
+            std::vector<std::list<morai_msgs::RadarDetections>> *radar_buf,
             std::vector<MountingPosition> *camera_tf_buf,
             std::vector<MountingPosition> *lidar_tf_buf, 
+            std::vector<MountingPosition> *radar_tf_buf,
             std::queue<morai_msgs::ObjectStatusListConstPtr> *obj_buf,
             std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf,
             std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf,
             sensor_msgs::ImuConstPtr *imu_msg,
             autoware_msgs::VehicleStatusConstPtr *autoware_vehicle_state,
             double(*morai_tm_offset)[2], double* ego_vehicle_heading, std::string* hdmap_path)
-        : service_(service), cq_(cq), camera_buf_(camera_buf), lidar_buf_(lidar_buf), 
-          camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf),
+        : service_(service), cq_(cq), camera_buf_(camera_buf), lidar_buf_(lidar_buf), radar_buf_(radar_buf),
+          camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf), radar_tf_buf_(radar_tf_buf),
           obj_buf_(obj_buf), tl_buf_(tl_buf), ego_vehicle_state_buf_(ego_vehicle_state_buf), imu_msg_(imu_msg), autoware_vehicle_state_(autoware_vehicle_state),
           morai_tm_offset_(morai_tm_offset), ego_vehicle_heading_(ego_vehicle_heading), hdmap_path_(hdmap_path), responder_(&ctx_), status_(CREATE)
     {
@@ -329,6 +369,15 @@ private:
             sensor_data_osi_converter_->LidarSensorToOSI(sending_cloud, lidar_view, lidar_tf_buf_->at(i), 64, i);
             lidar_buf_->at(i).pop_front();
             has_data_ = true;
+          }
+
+          for(int i = 0; i < radar_buf_->size() ; i++){
+            if (radar_buf_->at(i).size() == 0) continue;
+            auto& sending_detections = radar_buf_->at(i).front();
+            auto radar_view = reply_.add_radar_sensor_view();
+            sensor_data_osi_converter_->RadarSensorToOSI(sending_detections, radar_view, radar_tf_buf_->at(i), i);
+            radar_buf_->at(i).pop_front();
+            has_data_= true;
           }
 
           if(tl_buf_->size() > 0){
@@ -463,8 +512,10 @@ private:
     // Injected data
     std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> *camera_buf_;
     std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf_;
+    std::vector<std::list<morai_msgs::RadarDetections>> *radar_buf_;
     std::vector<MountingPosition> *camera_tf_buf_;
     std::vector<MountingPosition> *lidar_tf_buf_;
+    std::vector<MountingPosition> *radar_tf_buf_;
     double(*morai_tm_offset_)[2];
     double* ego_vehicle_heading_;
     std::string* hdmap_path_;
@@ -500,9 +551,9 @@ private:
   // Sensors
   std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> camera_buf_;
   std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> lidar_buf_;
-  std::vector<MountingPosition> camera_tf_buf_;
-  std::vector<MountingPosition> lidar_tf_buf_;
-  std::mutex lidar_mutex_, camera_mutex_;
+  std::vector<std::list<morai_msgs::RadarDetections>> radar_buf_;
+  std::vector<MountingPosition> camera_tf_buf_, lidar_tf_buf_, radar_tf_buf_;
+  std::mutex lidar_mutex_, camera_mutex_, radar_mutex_;
 
   // Ground Truth
   double morai_tm_offset_[2];
@@ -517,8 +568,7 @@ private:
 
   // ros
   ros::NodeHandle nh_;
-  std::vector<ros::Subscriber> sub_camera_topics_;
-  std::vector<ros::Subscriber> sub_lidar_topics_;
+  std::vector<ros::Subscriber> sub_camera_topics_, sub_lidar_topics_, sub_radar_topics_;
   ros::Subscriber sub_morai_vehicle_state_, sub_morai_gps_, sub_morai_object_info_, sub_morai_traffic_light_status_,
                   sub_is_changed_offset_, sub_morai_imu_, sub_autoware_ego_state_;
 
