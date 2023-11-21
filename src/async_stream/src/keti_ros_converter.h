@@ -38,22 +38,6 @@ public:
 
   ~KetiROSConverter() = default;
 
-  void RadarOSIToGeneral(RadarSensorView& radar_osi,
-                        std::vector<radar_msgs::RadarReturn>* radarreturns){
-    float radar_frequency; // Need to know Radar frequency
-    for (auto reflection : radar_osi.reflection()){
-      radar_msgs::RadarReturn radar_obj;    
-
-      radar_obj.range = reflection.time_of_flight() * SPEED_OF_LIGHT;
-      radar_obj.azimuth = reflection.source_horizontal_angle();
-      radar_obj.elevation = reflection.source_vertical_angle();
-      radar_obj.doppler_velocity = reflection.doppler_shift() * SPEED_OF_LIGHT / radar_frequency;
-      radar_obj.amplitude = reflection.signal_strength();
-
-      radarreturns->push_back(radar_obj);
-    }
-  }
-
   void TrafficLightIdMathching(){
     std::string csv_path, line, morai_id, keti_id, temp_string;         
     std::ifstream fs; 
@@ -243,6 +227,46 @@ public:
     // std::cout << "ProcCamera end camera : " << camera_id << std::endl;
 
     return std::make_pair(seq,img);
+  }
+
+  // void RadarOSIToGeneral(RadarSensorView& radar_osi,
+  //                       std::vector<radar_msgs::RadarReturn>* radarreturns){
+  //   float radar_frequency; // Need to know Radar frequency
+  //   for (auto reflection : radar_osi.reflection()){
+  //     radar_msgs::RadarReturn radar_obj;    
+
+  //     radar_obj.range = reflection.time_of_flight() * SPEED_OF_LIGHT;
+  //     radar_obj.azimuth = reflection.source_horizontal_angle();
+  //     radar_obj.elevation = reflection.source_vertical_angle();
+  //     radar_obj.doppler_velocity = reflection.doppler_shift() * SPEED_OF_LIGHT / radar_frequency;
+  //     radar_obj.amplitude = reflection.signal_strength();
+
+  //     radarreturns->push_back(radar_obj);
+  //   }
+  // }
+
+  std::pair<size_t, radar_msgs::RadarScan> ProcRadar(std::shared_ptr<RadarSensorView> radar_sensor_view,
+                                                     int radar_id, size_t seq){
+    std::cout << "ProcRadar start radar : " << radar_id << ", seq : " << seq << std::endl;
+
+    radar_msgs::RadarScan msg;
+    float radar_frequency = 20.0;  // Need to get as param later
+
+    msg.header.stamp = ros::Time::now();
+    for (auto reflection : radar_sensor_view->reflection()){
+      radar_msgs::RadarReturn radar_obj;
+      
+      radar_obj.range = reflection.time_of_flight() * SPEED_OF_LIGHT;
+      radar_obj.azimuth = reflection.source_horizontal_angle();
+      radar_obj.elevation = reflection.source_vertical_angle();
+      radar_obj.doppler_velocity = reflection.doppler_shift() * SPEED_OF_LIGHT / radar_frequency;
+      radar_obj.amplitude = reflection.signal_strength();
+
+      msg.returns.push_back(radar_obj);
+    }
+    std::cout << "ProcRadar end Radar : " << radar_id << ", seq : " << seq << std::endl;
+
+    return std::make_pair(seq,msg);
   }
 
   int CalculatePhsaeCode(std::vector<osi3::TrafficLight> osi_tls){

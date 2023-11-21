@@ -59,17 +59,20 @@ public:
 
     sub_is_changed_offset_ = nh_.subscribe("/is_changed_offset",1, &KetiROSBridge::CallbackUpdateOffsetParams, this);
 
-    XmlRpc::XmlRpcValue camera_param, lidar_param;
+    XmlRpc::XmlRpcValue camera_param, lidar_param, radar_param;
     nh_.getParam("camera_param", camera_param);
     nh_.getParam("lidar_param", lidar_param);
+    nh_.getParam("radar_param", radar_param);
 
     std::cout << "get param" << std::endl;
 
     num_of_camera_ = camera_param.size();
     num_of_lidar_ = lidar_param.size();
+    num_of_radar_ = radar_param.size();
 
     pub_imgs_.resize(num_of_camera_);
     pub_clouds_.resize(num_of_lidar_);
+    pub_radar_.resize(num_of_radar_);
 
     for (size_t i = 0; i < camera_param.size(); i++){
       std::string topic_name = "camera" + std::to_string(i) + "/grpc/compressed";
@@ -79,6 +82,11 @@ public:
     for (size_t i = 0; i < lidar_param.size(); i++){
       std::string topic_name = "lidar" + std::to_string(i) + "/grpc/points";
       pub_clouds_[i] = nh_.advertise<sensor_msgs::PointCloud2>(topic_name, 1);
+    }
+
+    for (size_t i = 0; i < radar_param.size(); i++){
+      std::string topic_name = "radar" + std::to_string(i) + "/grpc/radar";
+      pub_radar_[i] = nh_.advertise<radar_msgs::RadarScan>(topic_name, 1);
     }
 
     pub_tls_ = nh_.advertise<perception_msgs::TrafficLights>("/grpc/traffic_lights", 1);
@@ -96,6 +104,7 @@ public:
   {
     std::unordered_map<int, std::queue<std::future<std::pair<size_t,sensor_msgs::PointCloud2>>>> lidar_res_table;
     std::unordered_map<int, std::queue<std::future<std::pair<size_t,sensor_msgs::CompressedImage>>>> camera_res_table; // seq: 디버깅용 -> 빼도 상관없음
+    std::unordered_map<int, std::queue<std::future<std::pair<size_t,radar_msgs::RadarScan>>>> radar_res_table;
     std::queue<std::future<std::pair<size_t,perception_msgs::TrafficLights>>> tl_res_table;
     std::queue<std::future<std::pair<size_t,cyber_perception_msgs::PerceptionObstacles>>> obj_res_table;
   };
@@ -150,7 +159,7 @@ public:
   }
 
   void ConvertThread(){ 
-    std::unordered_map<int,size_t> lidar_seq_table, camera_seq_table;
+    std::unordered_map<int,size_t> lidar_seq_table, camera_seq_table, radar_seq_table;
     size_t tl_seq = 0, obj_seq = 0;
     
     for(int i = 0 ; i < num_of_lidar_ ; i++){
@@ -160,6 +169,10 @@ public:
     for(int i = 0 ; i < num_of_camera_ ; i++){
       camera_seq_table[i] = 0;  
     }
+
+    for(int i = 0 ; i < num_of_radar_ ; i++){
+      radar_seq_table[i] = 0;  
+    }    
 
     while(1){
       SensorView sensor_view;
@@ -195,6 +208,18 @@ public:
         // std::cout << "finish Add Conv Thread camera id " << camera_id <<  " seq : " << seq << std::endl;
 
         camera_seq_table[camera_id]++;
+      }
+
+      for ( int i = 0 ; i < sensor_view.radar_sensor_view().size() ; i++ ) {
+        auto radar_sensor_view = std::make_shared<RadarSensorView>(sensor_view.radar_sensor_view(i));
+        int radar_id = radar_sensor_view->view_configuration().sensor_id().value();
+        size_t seq = radar_seq_table[radar_id];
+
+        // std::cout << "start Add Conv Thread radar id " << radar_id <<  " seq : " << seq << std::endl;
+        msg_result_.radar_res_table[radar_id].push(keti::task::Async(&KetiROSConverter::ProcRadar, &converter_, radar_sensor_view, radar_id, seq));
+        // std::cout << "finish Add Conv Thread radar id " << radar_id <<  " seq : " << seq << std::endl;
+
+        radar_seq_table[radar_id]++;
       }
 
       if ( sensor_view.global_ground_truth().traffic_light_size() > 0 ){
@@ -285,6 +310,30 @@ public:
         std::cout << "result size : " << msg_result_.camera_res_table[i].size() << std::endl;
       }
 
+      for(int i = 0 ; i < num_of_radar_ ; i++){
+        if(msg_result_.radar_res_table.count(i) == 0){
+          continue;
+        }
+
+        if(msg_result_.radar_res_table[i].size() == 0){
+          continue;
+        }
+
+        std::cout << "try to publish radar topic : " << i << std::endl;
+        auto msg = msg_result_.radar_res_table[i].front().get();
+        std::cout << "check radar id : " << i << " seq : " << msg.first << std::endl; 
+        
+        pub_radar_[i].publish(msg.second);
+
+        std::cout << "publish finished radar id : " << i << " seq : " << msg.first << std::endl;
+
+        std::cout << "radar " << i << " erase start" << std::endl;
+        msg_result_.radar_res_table[i].pop();
+        std::cout << "radar " << i << " erase end" << std::endl;
+
+        std::cout << "result size : " << msg_result_.radar_res_table[i].size() << std::endl;
+      }
+
       if(msg_result_.tl_res_table.size() != 0){
         std::cout << "try to publish tl topic "<< std::endl;
         auto msg = msg_result_.tl_res_table.front().get();
@@ -325,9 +374,9 @@ public:
 private:
   // ros
   ros::NodeHandle nh_;
-  std::vector<ros::Publisher> pub_imgs_, pub_clouds_;
+  std::vector<ros::Publisher> pub_imgs_, pub_clouds_, pub_radar_;
   ros::Publisher pub_tls_, pub_objs_;
-  int num_of_camera_, num_of_lidar_;
+  int num_of_camera_, num_of_lidar_, num_of_radar_;
   ros::Subscriber sub_is_changed_offset_;
 
   // hdmap
