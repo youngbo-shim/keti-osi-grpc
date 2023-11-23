@@ -1,16 +1,12 @@
-#include <ros/ros.h>
-
 #include "keti_ros_bridge.cc"
 #include "autoware_ros_bridge.h"
 
-
 int main(int argc, char** argv){
-  ros::init(argc, argv, "grpc_client");
-  ros::NodeHandle nh;
+  ros::init(argc, argv, "grpc bridge");
   std::string host_name, bridge_name;
 
-  nh.getParam("host_name", host_name);
-  nh.getParam("bridge_name", bridge_name);
+  host_name = argv[1];
+  bridge_name = argv[2];
 
   OSIBridge *osi_bridge;
 
