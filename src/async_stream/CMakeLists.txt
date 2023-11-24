@@ -11,6 +11,7 @@ include(cmake/common.cmake)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
+  rospy
   sensor_msgs
   roslib
   morai_msgs
@@ -30,6 +31,13 @@ catkin_package(
   # DEPENDS system_lib
 )
 
+catkin_python_setup()
+
+# Python wrapper Setup
+## before catkin_make, `sudo apt-get install pybind11-dev`.
+find_package(PythonLibs REQUIRED)
+find_package(pybind11)
+
 find_package(Protobuf CONFIG REQUIRED)
 add_subdirectory(open-simulation-interface)
 
@@ -37,6 +45,7 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}/open-simulation-interface
+  ${PYTHON_INCLUDE_DIRS}
   include
   src
 )
@@ -94,3 +103,10 @@ foreach(_target
       open_simulation_interface_static
   )
 endforeach()
+
+# Python wrapper with pybind11
+set(wrapper_srcs
+  src/libwrapper.cpp
+
+)
+add_library(client_lib ${wrapper_srcs})
