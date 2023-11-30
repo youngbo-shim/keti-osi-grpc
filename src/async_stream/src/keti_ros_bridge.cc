@@ -89,9 +89,10 @@ public:
       pub_radar_[i] = nh_.advertise<radar_msgs::RadarScan>(topic_name, 1);
     }
 
-    pub_tls_ = nh_.advertise<perception_msgs::TrafficLights>("/grpc/traffic_lights", 1);
-
-    pub_objs_ = nh_.advertise<cyber_perception_msgs::PerceptionObstacles>("/grpc/objects", 1);
+    pub_tls_ = nh_.advertise<perception_msgs::TrafficLights>("/traffic_lights", 1);
+    pub_objs_ = nh_.advertise<cyber_perception_msgs::PerceptionObstacles>("/obstacles_local", 1);
+    pub_vehicle_state_ = nh_.advertise<control_msgs::VehicleState>("/vehicle_state", 1);
+    pub_current_pose_ = nh_.advertise<geometry_msgs::PoseStamped>("/current_pose", 1);
 
     std::cout << "finished" << std::endl;
 
@@ -107,6 +108,7 @@ public:
     std::unordered_map<int, std::queue<std::future<std::pair<size_t,radar_msgs::RadarScan>>>> radar_res_table;
     std::queue<std::future<std::pair<size_t,perception_msgs::TrafficLights>>> tl_res_table;
     std::queue<std::future<std::pair<size_t,cyber_perception_msgs::PerceptionObstacles>>> obj_res_table;
+    std::queue<std::future<std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped>>> ego_state_res_table;
   };
 
   void StartBridge(){
@@ -160,7 +162,7 @@ public:
 
   void ConvertThread(){ 
     std::unordered_map<int,size_t> lidar_seq_table, camera_seq_table, radar_seq_table;
-    size_t tl_seq = 0, obj_seq = 0;
+    size_t tl_seq = 0, obj_seq = 0, ego_vehicle_state_seq = 0;
     
     for(int i = 0 ; i < num_of_lidar_ ; i++){
       lidar_seq_table[i] = 0;  
@@ -237,6 +239,13 @@ public:
         obj_seq++;
       }
 
+      if(sensor_view.host_vehicle_data().vehicle_motion().has_acceleration()){
+        auto ego_vehicle_state_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
+        msg_result_.ego_state_res_table.push(keti::task::Async(&KetiROSConverter::ProcEgoVehicleState, &converter_, 
+                                                               ego_vehicle_state_view, ego_vehicle_state_seq, hdmap_));
+        ego_vehicle_state_seq++;
+      }
+
       // std::chrono::duration<double> running_time = std::chrono::system_clock::now() - now;
       // std::cout.precision(3);
       // std::cout << std::fixed << "converting running time : " << running_time.count() * 1000 << "ms" << std::endl;
@@ -271,13 +280,22 @@ public:
           continue;
         }
 
-        std::cout << "try to publish lidar topic : " << i << std::endl;
-        auto msg = msg_result_.lidar_res_table[i].front().get();
-        std::cout << "check lidar id : " << i << " seq : " << msg.first << std::endl; 
-        
-        pub_clouds_[i].publish(msg.second);
-
-        std::cout << "publish finished lidar id : " << i << " seq : " << msg.first << std::endl;
+        try {
+          std::cout << "try to publish lidar topic : " << i << std::endl;
+          auto msg = msg_result_.lidar_res_table[i].front().get();
+          std::cout << "check lidar id : " << i << " seq : " << msg.first << std::endl; 
+          
+          pub_clouds_[i].publish(msg.second);
+          std::cout << "publish finished lidar id : " << i << " seq : " << msg.first << std::endl;
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Lidar)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Lidar): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Lidar): " << e.what() << std::endl;
+        }
 
         std::cout << "lidar " << i << " erase start" << std::endl;
         msg_result_.lidar_res_table[i].pop();
@@ -295,13 +313,22 @@ public:
           continue;
         }
 
-        std::cout << "try to publish camera topic : " << i << std::endl;
-        auto msg = msg_result_.camera_res_table[i].front().get();
-        std::cout << "check camera id : " << i << " seq : " << msg.first << std::endl; 
-        
-        pub_imgs_[i].publish(msg.second);
-
-        std::cout << "publish finished camera id : " << i << " seq : " << msg.first << std::endl;
+        try {
+          std::cout << "try to publish camera topic : " << i << std::endl;
+          auto msg = msg_result_.camera_res_table[i].front().get();
+          std::cout << "check camera id : " << i << " seq : " << msg.first << std::endl; 
+          
+          pub_imgs_[i].publish(msg.second);
+          std::cout << "publish finished camera id : " << i << " seq : " << msg.first << std::endl;
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Image)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Image): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Image): " << e.what() << std::endl;
+        }
 
         std::cout << "camera " << i << " erase start" << std::endl;
         msg_result_.camera_res_table[i].pop();
@@ -319,13 +346,22 @@ public:
           continue;
         }
 
-        std::cout << "try to publish radar topic : " << i << std::endl;
-        auto msg = msg_result_.radar_res_table[i].front().get();
-        std::cout << "check radar id : " << i << " seq : " << msg.first << std::endl; 
-        
-        pub_radar_[i].publish(msg.second);
-
-        std::cout << "publish finished radar id : " << i << " seq : " << msg.first << std::endl;
+        try{
+          std::cout << "try to publish radar topic : " << i << std::endl;
+          auto msg = msg_result_.radar_res_table[i].front().get();
+          std::cout << "check radar id : " << i << " seq : " << msg.first << std::endl; 
+          
+          pub_radar_[i].publish(msg.second);
+          std::cout << "publish finished radar id : " << i << " seq : " << msg.first << std::endl;
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Radar)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Radar): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Radar): " << e.what() << std::endl;
+        }
 
         std::cout << "radar " << i << " erase start" << std::endl;
         msg_result_.radar_res_table[i].pop();
@@ -335,13 +371,23 @@ public:
       }
 
       if(msg_result_.tl_res_table.size() != 0){
-        std::cout << "try to publish tl topic "<< std::endl;
-        auto msg = msg_result_.tl_res_table.front().get();
-        std::cout << "check tl seq : " << msg.first << std::endl; 
-        
-        pub_tls_.publish(msg.second);
+        try {
+          std::cout << "try to publish tl topic "<< std::endl;
+          auto msg = msg_result_.tl_res_table.front().get();
+          std::cout << "check tl seq : " << msg.first << std::endl; 
 
-        std::cout << "tl publish finished seq : " << msg.first << std::endl;
+          pub_tls_.publish(msg.second);
+          std::cout << "tl publish finished seq : " << msg.first << std::endl;
+          
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Traffic)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Traffic): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Traffic): " << e.what() << std::endl;
+        }
 
         std::cout << "tl erase start" << std::endl;
         msg_result_.tl_res_table.pop();
@@ -352,13 +398,21 @@ public:
       }
 
       if(msg_result_.obj_res_table.size() != 0){
-        std::cout << "try to publish obj topic "<< std::endl;
-        auto msg = msg_result_.obj_res_table.front().get();
-        std::cout << "check obj seq : " << msg.first << std::endl; 
-        
-        pub_objs_.publish(msg.second);
-
-        std::cout << "obj publish finished seq : " << msg.first << std::endl;
+        try {
+          std::cout << "try to publish obj topic "<< std::endl;
+          auto msg = msg_result_.obj_res_table.front().get();
+          std::cout << "check obj seq : " << msg.first << std::endl;
+          pub_objs_.publish(msg.second);
+          std::cout << "obj publish finished seq : " << msg.first << std::endl;
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(Obstacle)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(Obstacle): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(Obstacle): " << e.what() << std::endl;
+        }
 
         std::cout << "obj erase start" << std::endl;
         msg_result_.obj_res_table.pop();
@@ -368,6 +422,35 @@ public:
 
       }
 
+      if(msg_result_.ego_state_res_table.size() != 0){
+        try {
+          std::cout << "try to publish vehicle state topic "<< std::endl;
+          auto msg = msg_result_.ego_state_res_table.front().get();
+          std::cout << "check vehicle state seq : " << std::get<0>(msg) << std::endl;
+          pub_vehicle_state_.publish(std::get<1>(msg));
+          std::cout << "vehicle state publish finished" << std::endl;
+          pub_current_pose_.publish(std::get<2>(msg));
+          std::cout << "cur pose publish finished" << std::endl;
+          static tf::TransformBroadcaster odom_broadcaster;
+          odom_broadcaster.sendTransform(std::get<3>(msg));
+          std::cout << "odom trans publish finished seq : " << std::get<0>(msg) << std::endl;
+        } catch (const std::future_error& e) {
+            if (e.code() == std::make_error_code(std::future_errc::no_state)) {
+                std::cerr << "No associated state(VehicleState)" << std::endl;
+            } else {
+                std::cerr << "Caught std::future_error(VehicleState): " << e.what() << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Caught exception(VehicleState): " << e.what() << std::endl;
+        }
+
+        std::cout << "vehicle state erase start" << std::endl;
+        msg_result_.ego_state_res_table.pop();
+        std::cout << "vehicle state erase end" << std::endl;
+
+        std::cout << "result size : " << msg_result_.ego_state_res_table.size() << std::endl;
+      }
+
     }
   }
 
@@ -375,7 +458,7 @@ private:
   // ros
   ros::NodeHandle nh_;
   std::vector<ros::Publisher> pub_imgs_, pub_clouds_, pub_radar_;
-  ros::Publisher pub_tls_, pub_objs_;
+  ros::Publisher pub_tls_, pub_objs_, pub_vehicle_state_, pub_current_pose_;
   int num_of_camera_, num_of_lidar_, num_of_radar_;
   ros::Subscriber sub_is_changed_offset_;
 

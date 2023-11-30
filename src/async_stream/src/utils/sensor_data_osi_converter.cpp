@@ -1,5 +1,7 @@
 #include "sensor_data_osi_converter.h"
 
+#define STEER_RATIO 12.3
+
 SensorDataOSIConverter::SensorDataOSIConverter(){}
 SensorDataOSIConverter::~SensorDataOSIConverter(){}
 
@@ -405,6 +407,7 @@ void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleSt
   host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_x(imu_ros->linear_acceleration.x);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_y(imu_ros->linear_acceleration.y);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_z(imu_ros->linear_acceleration.z);
+  host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(math::deg2rad(-ego_vehicle_state_ros->wheel_angle*STEER_RATIO));
 
   // veloicty
   if(autoware_vehicle_state_ros)

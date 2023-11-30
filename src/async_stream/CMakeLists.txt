@@ -22,6 +22,7 @@ find_package(catkin REQUIRED COMPONENTS
   map
   tf
   autoware_msgs
+  control_msgs
 )
 
 catkin_package(

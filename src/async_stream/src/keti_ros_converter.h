@@ -5,12 +5,16 @@
 #include <sensor_msgs/CompressedImage.h>
 #include <sensor_msgs/PointCloud2.h>
 #include <radar_msgs/RadarScan.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <tf/transform_broadcaster.h>
 #include "cyber_perception_msgs/PerceptionObstacles.h"
 #include "perception_msgs/TrafficLights.h"
 #include "perception_msgs/TrafficLight.h"
 #include "perception_msgs/TrafficSignalPhase.h"
+#include "control_msgs/VehicleState.h"
 
 #include "hdmap.h"
+#include "math/math_utils.h"
 
 #define SPEED_OF_LIGHT 299792458
 
@@ -24,7 +28,9 @@ using osi3::RadarSensorView;
 using osi3::SensorViewRPC;
 using osi3::MovingObject;
 using osi3::StationaryObject;
+using osi3::HostVehicleData;
 
+using namespace keti::common;
 using namespace keti::hdmap;
 
 class KetiROSConverter
@@ -306,6 +312,9 @@ public:
     perception_msgs::TrafficLight traffic_light;
     std::unordered_map<std::string, std::vector<osi3::TrafficLight>> osi_tl_container;
 
+    out_traffic_lights.header.frame_id = "map";
+    out_traffic_lights.header.stamp = ros::Time::now();
+
     for(int i = 0 ; i < osi_tls.get()->size() ; i++){
       auto osi_tl = osi_tls.get()->Get(i);
       std::string morai_id = osi_tl.source_reference(0).identifier(0);
@@ -368,6 +377,7 @@ public:
     cyber_perception_msgs::PerceptionObstacles obstacles;
 
     obstacles.header.frame_id = "base_link";
+    obstacles.header.timestamp_sec = ros::Time::now().toSec();
 
     if(osi_moving_objs.get()->size() == 1 && osi_moving_objs.get()->Get(0).id().value() == 0 &&
        osi_stationary_objs.get()->size() == 1 && osi_stationary_objs.get()->Get(0).id().value() == 0 ){
@@ -445,6 +455,44 @@ public:
     std::cout << "ProcObj end seq : " << seq << std::endl;
 
     return std::make_pair(seq,obstacles);
+  }
+
+  std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped> ProcEgoVehicleState(std::shared_ptr<HostVehicleData> host_vehicle_data,
+                                                                                               size_t seq, std::shared_ptr<HDMap> hdmap){
+    std::cout << "VehicleState start seq : " << seq << std::endl;
+
+    control_msgs::VehicleState out_vehicle_state;
+    geometry_msgs::PoseStamped cur_pose;
+    geometry_msgs::TransformStamped odom_trans;
+
+    out_vehicle_state.header.stamp = ros::Time::now();
+    out_vehicle_state.autonomous_status = 2;
+    out_vehicle_state.x_utm = host_vehicle_data->vehicle_motion().position().x();
+    out_vehicle_state.y_utm = host_vehicle_data->vehicle_motion().position().y();
+    out_vehicle_state.v_ego = math::ms2kmh(host_vehicle_data->vehicle_motion().velocity().x());
+    out_vehicle_state.a_x = host_vehicle_data->vehicle_motion().acceleration().x();
+    out_vehicle_state.steer_angle = math::rad2deg(host_vehicle_data->vehicle_steering().vehicle_steering_wheel().angle());
+    out_vehicle_state.heading_utm = host_vehicle_data->vehicle_motion().orientation().yaw();
+    out_vehicle_state.yaw_rate = host_vehicle_data->vehicle_motion().orientation_rate().yaw();
+
+    cur_pose.header.frame_id = "map";
+    cur_pose.header.stamp = ros::Time::now();
+    cur_pose.pose.position.x = out_vehicle_state.x_utm;  
+    cur_pose.pose.position.y = out_vehicle_state.y_utm;  
+    cur_pose.pose.orientation = tf::createQuaternionMsgFromYaw(out_vehicle_state.heading_utm);
+
+    odom_trans.header.stamp = ros::Time::now();
+    odom_trans.header.frame_id = "map";
+    odom_trans.child_frame_id = "base_link";
+
+    odom_trans.transform.translation.x = cur_pose.pose.position.x-hdmap->x_offset();
+    odom_trans.transform.translation.y = cur_pose.pose.position.y-hdmap->y_offset();
+    odom_trans.transform.translation.z = 0.0;
+    odom_trans.transform.rotation = cur_pose.pose.orientation;
+
+    std::cout << "ProcVehicleState end seq : " << seq << std::endl;
+
+    return {seq,out_vehicle_state,cur_pose,odom_trans};
   }
 
 private:
