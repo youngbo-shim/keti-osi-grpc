@@ -36,7 +36,8 @@
 #include "math/math_utils.h"
 #include "conversion/coordinate/utm_conversion.h"
 #include "conversion/coordinate/tm_conversion.h"
-#include <autoware_msgs/VehicleStatus.h>
+#include "autoware_msgs/VehicleStatus.h"
+#include "utils/string_utils.h"
 
 #define SPEED_OF_LIGHT 299792458
 
@@ -64,9 +65,6 @@ using PhaseTable = std::unordered_map<int, std::vector<osi3::TrafficLight>>;
 using TypeTable = std::unordered_map<int, PhaseTable>;
 using ObjTable = std::map<std::pair<int, std::string>, osi3::MovingObject::VehicleClassification>;
 
-static constexpr unsigned int Hash(const char* str){
-  return str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * Hash(str + 1) : 8603;
-}
 
 class SensorDataOSIConverter {
   public:
@@ -77,9 +75,9 @@ class SensorDataOSIConverter {
                            const MountingPosition& camera_mount_pose, const size_t& sensor_id);
     void LidarSensorToOSI(const sensor_msgs::PointCloud2ConstPtr& lidar_ros, LidarSensorView* lidar_osi, 
                           const MountingPosition& lidar_mount_pose, const size_t& num_of_rays, const size_t& sensor_id);
-    void RadarSensorToOSI(morai_msgs::RadarDetections& radardetections, RadarSensorView* radar_osi,
+    void RadarSensorToOSI(const morai_msgs::RadarDetections& radardetections, RadarSensorView* radar_osi,
                           const MountingPosition& radar_mount_pose, const size_t& sensor_id);
-    void RadarSensorToOSI(radar_msgs::RadarScan& radarscans, RadarSensorView* radar_osi,
+    void RadarSensorToOSI(const radar_msgs::RadarScan& radarscans, RadarSensorView* radar_osi,
                           const geometry_msgs::PoseStamped::ConstPtr& radar_mount_pose, const size_t& sensor_id);
 
     void TrafficLightsToOSI(const morai_msgs::GetTrafficLightStatusConstPtr& traffic_light_ros, osi3::TrafficLight* traffic_ligth_gt, osi3::TrafficLight& traffic_ligth_osi);
@@ -88,8 +86,8 @@ class SensorDataOSIConverter {
     TypeTable GetMoraiToOSITrafficLightMatchingTable() { return morai_to_osi_matching_table_tl_; }
     void ObjectMoraiToOSIMatching();
     ObjTable GetMoraiToOSIObstacleMatchingTable() { return morai_to_osi_matching_table_obj_; }
-    void EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::ImuConstPtr& imu_ros, 
-                             const autoware_msgs::VehicleStatusConstPtr& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi);
+    void EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::Imu& imu_ros, 
+                             const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi);
     double GetEgoVehicleHeading () { return ego_vehicle_heading_; }
     double SetEgoVehicleHeading (double ege_vehicle_heading) { return ego_vehicle_heading_ = ege_vehicle_heading; }
     void EmptyObstacleToOSI(osi3::MovingObject* moving_obstacle_osi,

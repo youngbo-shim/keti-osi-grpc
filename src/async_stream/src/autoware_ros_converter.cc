@@ -203,12 +203,12 @@ std::pair<size_t,autoware_msgs::DetectedObjectArray> AutowareROSConverter::ProcO
   return std::make_pair(seq,obstacles);
 }
 
-std::pair<size_t,sensor_msgs::Imu> AutowareROSConverter::ProcImu(std::shared_ptr<HostVehicleData>& imu_sensor_view, size_t imu_seq){
+std::pair<size_t,sensor_msgs::Imu> AutowareROSConverter::ProcImu(const HostVehicleData& imu_sensor_view, size_t imu_seq){
 
   tf2::Quaternion quat;
-  quat.setRPY( imu_sensor_view->vehicle_motion().orientation().roll(),
-                      imu_sensor_view->vehicle_motion().orientation().pitch(),
-                      imu_sensor_view->vehicle_motion().orientation().yaw());
+  quat.setRPY( imu_sensor_view.vehicle_motion().orientation().roll(),
+                      imu_sensor_view.vehicle_motion().orientation().pitch(),
+                      imu_sensor_view.vehicle_motion().orientation().yaw());
 
   sensor_msgs::Imu imu_msg;
   imu_msg.header.frame_id = "imu";
@@ -219,31 +219,31 @@ std::pair<size_t,sensor_msgs::Imu> AutowareROSConverter::ProcImu(std::shared_ptr
   imu_msg.orientation.z = quat.z();
   imu_msg.orientation.w = quat.w();
 
-  imu_msg.angular_velocity.x = imu_sensor_view->vehicle_motion().orientation_rate().roll();
-  imu_msg.angular_velocity.y = imu_sensor_view->vehicle_motion().orientation_rate().pitch();
-  imu_msg.angular_velocity.z = imu_sensor_view->vehicle_motion().orientation_rate().yaw();
+  imu_msg.angular_velocity.x = imu_sensor_view.vehicle_motion().orientation_rate().roll();
+  imu_msg.angular_velocity.y = imu_sensor_view.vehicle_motion().orientation_rate().pitch();
+  imu_msg.angular_velocity.z = imu_sensor_view.vehicle_motion().orientation_rate().yaw();
 
-  imu_msg.linear_acceleration.x = imu_sensor_view->vehicle_motion().acceleration().x();
-  imu_msg.linear_acceleration.y = imu_sensor_view->vehicle_motion().acceleration().y();
-  imu_msg.linear_acceleration.z = imu_sensor_view->vehicle_motion().acceleration().z();
+  imu_msg.linear_acceleration.x = imu_sensor_view.vehicle_motion().acceleration().x();
+  imu_msg.linear_acceleration.y = imu_sensor_view.vehicle_motion().acceleration().y();
+  imu_msg.linear_acceleration.z = imu_sensor_view.vehicle_motion().acceleration().z();
 
   return std::make_pair(imu_seq, imu_msg);
 }
 
-std::pair<size_t, geometry_msgs::PoseStamped> AutowareROSConverter::ProcEgoVehicleState(std::shared_ptr<HostVehicleData>& ego_vehicle_state_view, size_t ego_vehicle_state_seq){
+std::pair<size_t, geometry_msgs::PoseStamped> AutowareROSConverter::ProcEgoVehicleState(const HostVehicleData& ego_vehicle_state_view, size_t ego_vehicle_state_seq){
 
   tf2::Quaternion quat;
-  quat.setRPY( ego_vehicle_state_view->vehicle_motion().orientation().roll(),
-              ego_vehicle_state_view->vehicle_motion().orientation().pitch(),
-              ego_vehicle_state_view->vehicle_motion().orientation().yaw());
+  quat.setRPY( ego_vehicle_state_view.vehicle_motion().orientation().roll(),
+              ego_vehicle_state_view.vehicle_motion().orientation().pitch(),
+              ego_vehicle_state_view.vehicle_motion().orientation().yaw());
 
   geometry_msgs::PoseStamped ego_vehicle_state_msg;
   ego_vehicle_state_msg.header.frame_id = "map";
   ego_vehicle_state_msg.header.stamp = ros::Time::now();
 
-  ego_vehicle_state_msg.pose.position.x = ego_vehicle_state_view->vehicle_motion().position().x() - this->GetoffsetX();
-  ego_vehicle_state_msg.pose.position.y = ego_vehicle_state_view->vehicle_motion().position().y() - this->GetoffsetY();
-  ego_vehicle_state_msg.pose.position.z = ego_vehicle_state_view->vehicle_motion().position().z();
+  ego_vehicle_state_msg.pose.position.x = ego_vehicle_state_view.vehicle_motion().position().x() - this->GetoffsetX();
+  ego_vehicle_state_msg.pose.position.y = ego_vehicle_state_view.vehicle_motion().position().y() - this->GetoffsetY();
+  ego_vehicle_state_msg.pose.position.z = ego_vehicle_state_view.vehicle_motion().position().z();
   ego_vehicle_state_msg.pose.orientation.x = quat.x();
   ego_vehicle_state_msg.pose.orientation.y = quat.y();
   ego_vehicle_state_msg.pose.orientation.z = quat.z();
@@ -253,25 +253,25 @@ std::pair<size_t, geometry_msgs::PoseStamped> AutowareROSConverter::ProcEgoVehic
   
 }
 
-std::pair<size_t, geometry_msgs::TwistStamped> AutowareROSConverter::ProcEgoVehicleSpeed(std::shared_ptr<HostVehicleData>& ego_vehicle_state_view, size_t ego_vehicle_state_seq){
+std::pair<size_t, geometry_msgs::TwistStamped> AutowareROSConverter::ProcEgoVehicleSpeed(const HostVehicleData& ego_vehicle_state_view, size_t ego_vehicle_state_seq){
 
   geometry_msgs::TwistStamped ego_vehicle_speed;
   ego_vehicle_speed.header.stamp = ros::Time::now();
   ego_vehicle_speed.header.frame_id = "base_link";
-  ego_vehicle_speed.twist.linear.x = ego_vehicle_state_view->vehicle_motion().velocity().x();
+  ego_vehicle_speed.twist.linear.x = ego_vehicle_state_view.vehicle_motion().velocity().x();
   
   return std::make_pair(ego_vehicle_state_seq, ego_vehicle_speed);
 }
 
-std::pair<size_t, morai_msgs::GPSMessage> AutowareROSConverter::ProcGps(std::shared_ptr<HostVehicleData>& gps_sensor_view, size_t gps_seq){
+std::pair<size_t, morai_msgs::GPSMessage> AutowareROSConverter::ProcGps(const HostVehicleData& gps_sensor_view, size_t gps_seq){
 
   morai_msgs::GPSMessage gps_msg;
   gps_msg.header.frame_id = "gps";
   gps_msg.header.stamp = ros::Time::now();
 
-  gps_msg.latitude = gps_sensor_view->vehicle_motion().position().x();
-  gps_msg.longitude = gps_sensor_view->vehicle_motion().position().y();
-  gps_msg.altitude = gps_sensor_view->vehicle_motion().position().z();
+  gps_msg.latitude = gps_sensor_view.vehicle_motion().position().x();
+  gps_msg.longitude = gps_sensor_view.vehicle_motion().position().y();
+  gps_msg.altitude = gps_sensor_view.vehicle_motion().position().z();
 
   gps_msg.eastOffset = this->GetoffsetX();
   gps_msg.northOffset = this->GetoffsetY();

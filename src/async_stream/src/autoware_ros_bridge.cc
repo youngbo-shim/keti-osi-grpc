@@ -72,17 +72,22 @@ void AutowareROSBridge::ConvertThread(){
 
   while(1){
     SensorView sensor_view;
-    if(sensor_view_buf_.size() != 0){
+    if(!sensor_view_buf_.empty()){
         std::lock_guard<std::mutex> lock(sensor_view_mutex_);
-        sensor_view = sensor_view_buf_.front();
+        sensor_view.CopyFrom(sensor_view_buf_.front());
         sensor_view_buf_.pop();
-    } else continue;
+    } else{
+      continue;
+    }
 
     for ( int i = 0 ; i < sensor_view.lidar_sensor_view().size() ; i++ ) {
       auto lidar_sensor_view = std::make_shared<LidarSensorView>(sensor_view.lidar_sensor_view(i));
       int lidar_id = lidar_sensor_view->view_configuration().sensor_id().value();
       size_t seq = lidar_seq_table[lidar_id];
-      msg_result_.lidar_res_table[lidar_id].push(keti::task::Async(&AutowareROSConverter::ProcLidar, &converter_, lidar_sensor_view, lidar_id, seq));
+      msg_result_.lidar_res_table[lidar_id].push(keti::task::Async(&AutowareROSConverter::ProcLidar,
+                                                                   &converter_,
+                                                                   lidar_sensor_view,
+                                                                   lidar_id, seq));
       lidar_seq_table[lidar_id]++;
     }
 
@@ -94,42 +99,54 @@ void AutowareROSBridge::ConvertThread(){
       camera_seq_table[camera_id]++;
     }
 
-    if ( sensor_view.global_ground_truth().moving_object_size() > 0 || sensor_view.global_ground_truth().stationary_object_size() > 0 ){
+    if ( sensor_view.global_ground_truth().moving_object_size() > 0 || sensor_view.global_ground_truth().stationary_object_size() > 0 ){      
       auto moving_objs = std::make_shared<RepeatedPtrField<MovingObject>>(sensor_view.global_ground_truth().moving_object());
       auto stationary_objs = std::make_shared<RepeatedPtrField<StationaryObject>>(sensor_view.global_ground_truth().stationary_object());
-      msg_result_.obj_res_table.push(keti::task::Async(&AutowareROSConverter::ProcObj, &converter_, moving_objs, stationary_objs, obj_seq));
+      msg_result_.obj_res_table.push(keti::task::Async(&AutowareROSConverter::ProcObj,
+                                                       &converter_,
+                                                       moving_objs,
+                                                       stationary_objs,
+                                                       obj_seq));
+
       obj_seq++;
     }
 
-    if(sensor_view.host_vehicle_data().vehicle_motion().has_acceleration()){
-      auto imu_sensor_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
-      auto gps_sensor_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
-      auto ego_vehicle_state_view = std::make_shared<HostVehicleData>(sensor_view.host_vehicle_data());
-      msg_result_.imu_res_table.push(keti::task::Async(&AutowareROSConverter::ProcImu, &converter_, imu_sensor_view, ego_vehicle_state_seq));
-      msg_result_.gps_res_table.push(keti::task::Async(&AutowareROSConverter::ProcGps, &converter_, gps_sensor_view, ego_vehicle_state_seq));
-      msg_result_.ego_state_res_table.push(keti::task::Async(&AutowareROSConverter::ProcEgoVehicleState, &converter_, ego_vehicle_state_view, ego_vehicle_state_seq));
-      msg_result_.ego_speed_res_table.push(keti::task::Async(&AutowareROSConverter::ProcEgoVehicleSpeed, &converter_, ego_vehicle_state_view, ego_vehicle_state_seq));
-      ego_vehicle_state_seq++;
+    if(sensor_view.host_vehicle_data().has_vehicle_motion()){
+      if(sensor_view.host_vehicle_data().vehicle_motion().has_acceleration()){
+        msg_result_.imu_res_table.push(keti::task::Async(&AutowareROSConverter::ProcImu,
+                                                         &converter_,
+                                                         sensor_view.host_vehicle_data(),
+                                                         ego_vehicle_state_seq));
+
+        msg_result_.gps_res_table.push(keti::task::Async(&AutowareROSConverter::ProcGps,
+                                                         &converter_,
+                                                         sensor_view.host_vehicle_data(),
+                                                         ego_vehicle_state_seq));
+
+        msg_result_.ego_state_res_table.push(keti::task::Async(&AutowareROSConverter::ProcEgoVehicleState,
+                                                               &converter_,
+                                                               sensor_view.host_vehicle_data(),
+                                                               ego_vehicle_state_seq));
+
+        msg_result_.ego_speed_res_table.push(keti::task::Async(&AutowareROSConverter::ProcEgoVehicleSpeed,
+                                                               &converter_,
+                                                               sensor_view.host_vehicle_data(),
+                                                               ego_vehicle_state_seq));
+
+        ego_vehicle_state_seq++;
+      }
     }
   }
 }
 
 void AutowareROSBridge::PublishThread(){
-
-  int thread_start_cnt = 0;
-
-  while(true){
-    if(thread_start_cnt < 100){
-      std::cout << "start publish thread" << std::endl;
-      thread_start_cnt++;
-    }
-
+  while(true){    
     for(int i = 0 ; i < num_of_lidar_ ; i++){
       if(msg_result_.lidar_res_table.count(i) == 0){
         continue;
       }
 
-      if(msg_result_.lidar_res_table[i].size() == 0){
+      if(msg_result_.lidar_res_table[i].empty()){
         continue;
       }
 
@@ -153,9 +170,10 @@ void AutowareROSBridge::PublishThread(){
         continue;
       }
 
-      if(msg_result_.camera_res_table[i].size() == 0){
+      if(msg_result_.camera_res_table[i].empty()){
         continue;
       }
+
       try {
         auto msg = msg_result_.camera_res_table[i].front().get();
         pub_imgs_[i].publish(msg.second);
@@ -171,7 +189,7 @@ void AutowareROSBridge::PublishThread(){
       msg_result_.camera_res_table[i].pop();
     }
 
-    if(msg_result_.obj_res_table.size() != 0){
+    if(!msg_result_.obj_res_table.empty()){
       try {
         auto msg = msg_result_.obj_res_table.front().get();
         pub_objs_.publish(msg.second);
@@ -187,7 +205,7 @@ void AutowareROSBridge::PublishThread(){
       msg_result_.obj_res_table.pop();
     }
 
-    if(msg_result_.imu_res_table.size() != 0){
+    if(!msg_result_.imu_res_table.empty()){
       try {
         auto msg = msg_result_.imu_res_table.front().get();
         pub_imu_.publish(msg.second);
@@ -203,7 +221,7 @@ void AutowareROSBridge::PublishThread(){
       msg_result_.imu_res_table.pop();
     }
 
-    if(msg_result_.gps_res_table.size() != 0){
+    if(!msg_result_.gps_res_table.empty()){
       try {
         auto msg = msg_result_.gps_res_table.front().get();
         pub_gps_.publish(msg.second);
@@ -219,7 +237,7 @@ void AutowareROSBridge::PublishThread(){
       msg_result_.gps_res_table.pop();
     }
 
-    if(msg_result_.ego_state_res_table.size() != 0){
+    if(!msg_result_.ego_state_res_table.empty()){
       try {
         auto msg = msg_result_.ego_state_res_table.front().get();
         { 
@@ -227,8 +245,14 @@ void AutowareROSBridge::PublishThread(){
           static tf::TransformBroadcaster br;
           br.sendTransform(
             tf::StampedTransform(
-              tf::Transform(tf::Quaternion(msg.second.pose.orientation.x, msg.second.pose.orientation.y, msg.second.pose.orientation.z, msg.second.pose.orientation.w),
-              tf::Vector3(msg.second.pose.position.x, msg.second.pose.position.y, 0.0)),
+              tf::Transform(tf::Quaternion(msg.second.pose.orientation.x,
+                                           msg.second.pose.orientation.y,
+                                           msg.second.pose.orientation.z,
+                                           msg.second.pose.orientation.w),
+                                           
+                            tf::Vector3(msg.second.pose.position.x,
+                                        msg.second.pose.position.y,
+                                        0.0)),
               ros::Time::now(),
               "map",
               "base_link"
@@ -247,7 +271,7 @@ void AutowareROSBridge::PublishThread(){
       msg_result_.ego_state_res_table.pop();
     }         
 
-    if(msg_result_.ego_speed_res_table.size() != 0){
+    if(!msg_result_.ego_speed_res_table.empty()){
       try {
         auto msg = msg_result_.ego_speed_res_table.front().get();
         pub_autoware_ego_speed_.publish(msg.second);
@@ -261,7 +285,6 @@ void AutowareROSBridge::PublishThread(){
           std::cerr << "Caught exception(ego state): " << e.what() << std::endl;
       }
       msg_result_.ego_speed_res_table.pop();
-    }    
-
+    }
   }
 }

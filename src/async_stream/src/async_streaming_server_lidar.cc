@@ -205,25 +205,16 @@ public:
 
     while (true)
     {
-      std::chrono::time_point<std::chrono::system_clock> start =
-                                        std::chrono::system_clock::now();
       if(!HasData()) continue;
       cq_->Next(&tag, &ok);
 
-      std::chrono::duration<double> next_running_time = std::chrono::system_clock::now() - start;
-      std::cout.precision(2);
-      if(next_running_time.count() * 1000 > 10.0){
-        std::cout << "next running time : " << next_running_time.count() * 1000 << "ms" << std::endl;
-      }
-      GPR_ASSERT(ok);
+      // GPR_ASSERT(ok);
+      if (!ok) continue;
 
-      // std::cout << "[tag, ok] : " << tag << ", " << ok << std::endl;
       if ( !static_cast<CallData *>(tag)->Proceed(ok)){
         break;
       }
 
-      std::chrono::duration<double> running_time = std::chrono::system_clock::now() - start;
-      std::cout.precision(3);
       // if (!static_cast<CallData *>(tag)->Proceed(ok))
       //   break;
     }
@@ -233,17 +224,17 @@ public:
 
   void CallbackImage(const sensor_msgs::CompressedImageConstPtr& img, size_t idx){
     std::lock_guard<std::mutex> lock(camera_mutex_);
-    camera_buf_[idx].push_back(img);
+    camera_buf_[idx].push(img);
   }
 
   void CallbackPointCloud(const sensor_msgs::PointCloud2ConstPtr& cloud, size_t idx){
     std::lock_guard<std::mutex> lock(lidar_mutex_);
-    lidar_buf_[idx].push_back(cloud);
+    lidar_buf_[idx].push(cloud);
   }
 
   void CallbackRadarDetections(const morai_msgs::RadarDetectionsConstPtr& detections, size_t idx){
     std::lock_guard<std::mutex> lock(radar_mutex_);
-    radar_buf_[idx].push_back(*detections);
+    radar_buf_[idx].push(*detections);
   }
 
   void CallbackVehicleState(const morai_msgs::EgoVehicleStatusConstPtr& vehicle_state){
@@ -256,11 +247,11 @@ public:
   }
 
   void CallbackImu( const sensor_msgs::ImuConstPtr& imu ){
-    imu_msg_ = imu;
+    imu_msg_ = *imu;
   }
 
   void CallbackAutowareEgoState( const autoware_msgs::VehicleStatusConstPtr& ego_state ){
-    autoware_vehicle_state_ = ego_state;
+    autoware_vehicle_state_ = *ego_state;
   }
 
   void CallbackObjectInfo(const morai_msgs::ObjectStatusListPtr& objs) {
@@ -277,15 +268,15 @@ public:
   }
 
   bool HasData(){
-    for(auto camera_buf : camera_buf_){
+    for(auto& camera_buf : camera_buf_){
       if(!camera_buf.empty()) return true;
     }
 
-    for(auto lidar_buf : lidar_buf_){
+    for(auto& lidar_buf : lidar_buf_){
       if(!lidar_buf.empty()) return true;
     }
 
-    for(auto radar_buf : radar_buf_){
+    for(auto& radar_buf : radar_buf_){
       if(!radar_buf.empty()) return true;
     }
 
@@ -307,17 +298,17 @@ private:
     // server) and the completion queue "cq" used for asynchronous communication
     // with the gRPC runtime.
     CallData(SensorViewRPC::AsyncService *service, ServerCompletionQueue *cq,
-            std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> *camera_buf,
-            std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf,
-            std::vector<std::list<morai_msgs::RadarDetections>> *radar_buf,
+            std::vector<std::queue<sensor_msgs::CompressedImageConstPtr>> *camera_buf,
+            std::vector<std::queue<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf,
+            std::vector<std::queue<morai_msgs::RadarDetections>> *radar_buf,
             std::vector<MountingPosition> *camera_tf_buf,
             std::vector<MountingPosition> *lidar_tf_buf, 
             std::vector<MountingPosition> *radar_tf_buf,
             std::queue<morai_msgs::ObjectStatusListConstPtr> *obj_buf,
             std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf,
             std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf,
-            sensor_msgs::ImuConstPtr *imu_msg,
-            autoware_msgs::VehicleStatusConstPtr *autoware_vehicle_state,
+            sensor_msgs::Imu *imu_msg,
+            autoware_msgs::VehicleStatus *autoware_vehicle_state,
             double(*morai_tm_offset)[2], double* ego_vehicle_heading, std::string* hdmap_path)
         : service_(service), cq_(cq), camera_buf_(camera_buf), lidar_buf_(lidar_buf), radar_buf_(radar_buf),
           camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf), radar_tf_buf_(radar_tf_buf),
@@ -353,30 +344,30 @@ private:
           reply_.Clear();          
           has_data_ = false;
 
-          for(int i = 0 ; i < camera_buf_->size() ; i++){
+          for(int i = 0 ; i < camera_buf_->size() ; i++){            
             if(camera_buf_->at(i).size() == 0) continue;
-            auto& sending_img = camera_buf_->at(i).front();
+            const auto& sending_img = camera_buf_->at(i).front();
             auto camera_view = reply_.add_camera_sensor_view();
             sensor_data_osi_converter_->CameraSensorToOSI(sending_img, camera_view, camera_tf_buf_->at(i), i);
-            camera_buf_->at(i).pop_front();
+            camera_buf_->at(i).pop();
             has_data_ = true;
           }
 
           for(int i = 0 ; i < lidar_buf_->size() ; i++){
             if(lidar_buf_->at(i).size() == 0) continue;
-            auto& sending_cloud =  lidar_buf_->at(i).front();
+            const auto& sending_cloud =  lidar_buf_->at(i).front();
             auto lidar_view = reply_.add_lidar_sensor_view();
             sensor_data_osi_converter_->LidarSensorToOSI(sending_cloud, lidar_view, lidar_tf_buf_->at(i), 64, i);
-            lidar_buf_->at(i).pop_front();
+            lidar_buf_->at(i).pop();
             has_data_ = true;
           }
 
           for(int i = 0; i < radar_buf_->size() ; i++){
             if (radar_buf_->at(i).size() == 0) continue;
-            auto& sending_detections = radar_buf_->at(i).front();
+            const auto& sending_detections = radar_buf_->at(i).front();
             auto radar_view = reply_.add_radar_sensor_view();
             sensor_data_osi_converter_->RadarSensorToOSI(sending_detections, radar_view, radar_tf_buf_->at(i), i);
-            radar_buf_->at(i).pop_front();
+            radar_buf_->at(i).pop();
             has_data_= true;
           }
 
@@ -392,7 +383,7 @@ private:
           }
 
           if(ego_vehicle_state_buf_->size() > 0){
-            auto& sending_ego_state = ego_vehicle_state_buf_->front();
+            const auto& sending_ego_state = ego_vehicle_state_buf_->front();
             auto host_vehicle_view = reply_.mutable_host_vehicle_data();
             sensor_data_osi_converter_->EgoVehicleStateToOSI(sending_ego_state, *imu_msg_, *autoware_vehicle_state_, host_vehicle_view);
             sensor_data_osi_converter_->SetEgoVehicleHeading(host_vehicle_view->vehicle_motion().orientation().yaw() * 180.0 / M_PI);
@@ -403,7 +394,6 @@ private:
 
           if(obj_buf_->size() > 0){
             auto& sending_obj = obj_buf_->front();
-            std::cout << "hdmap path : " << *hdmap_path_ << std::endl;
 
             if(sending_obj->npc_list.size() == 0 && sending_obj->pedestrian_list.size() == 0 && sending_obj->obstacle_list.size() == 0){
               auto moving_obj = reply_.mutable_global_ground_truth()->add_moving_object();
@@ -464,7 +454,6 @@ private:
             reply_.mutable_timestamp()->set_nanos((nanoseconds-seconds)*1e9);
 
             responder_.Write(reply_, this);
-            std::cout << std::fixed << "[current] : " << current_nanoseconds << std::endl;
             
             std::chrono::duration<double> running_time = std::chrono::system_clock::now() - start;
             std::cout.precision(3);
@@ -510,9 +499,9 @@ private:
     // std::unordered_map<std::string, std::vector<std::string>> id_table_;
 
     // Injected data
-    std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> *camera_buf_;
-    std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf_;
-    std::vector<std::list<morai_msgs::RadarDetections>> *radar_buf_;
+    std::vector<std::queue<sensor_msgs::CompressedImageConstPtr>> *camera_buf_;
+    std::vector<std::queue<sensor_msgs::PointCloud2ConstPtr>> *lidar_buf_;
+    std::vector<std::queue<morai_msgs::RadarDetections>> *radar_buf_;
     std::vector<MountingPosition> *camera_tf_buf_;
     std::vector<MountingPosition> *lidar_tf_buf_;
     std::vector<MountingPosition> *radar_tf_buf_;
@@ -522,8 +511,8 @@ private:
     std::queue<morai_msgs::ObjectStatusListConstPtr> *obj_buf_;
     std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf_;
     std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf_;
-    sensor_msgs::ImuConstPtr *imu_msg_;
-    autoware_msgs::VehicleStatusConstPtr *autoware_vehicle_state_;
+    sensor_msgs::Imu *imu_msg_;
+    autoware_msgs::VehicleStatus *autoware_vehicle_state_;
 
     // The means to get back to the client.
     ServerAsyncWriter<SensorView> responder_;
@@ -549,9 +538,9 @@ private:
   std::string address_;
 
   // Sensors
-  std::vector<std::list<sensor_msgs::CompressedImageConstPtr>> camera_buf_;
-  std::vector<std::list<sensor_msgs::PointCloud2ConstPtr>> lidar_buf_;
-  std::vector<std::list<morai_msgs::RadarDetections>> radar_buf_;
+  std::vector<std::queue<sensor_msgs::CompressedImageConstPtr>> camera_buf_;
+  std::vector<std::queue<sensor_msgs::PointCloud2ConstPtr>> lidar_buf_;
+  std::vector<std::queue<morai_msgs::RadarDetections>> radar_buf_;
   std::vector<MountingPosition> camera_tf_buf_, lidar_tf_buf_, radar_tf_buf_;
   std::mutex lidar_mutex_, camera_mutex_, radar_mutex_;
 
@@ -561,8 +550,8 @@ private:
   std::queue<morai_msgs::ObjectStatusListConstPtr> obj_buf_;
   std::queue<morai_msgs::EgoVehicleStatusConstPtr> ego_vehicle_state_buf_;
   std::queue<morai_msgs::GetTrafficLightStatusPtr> tl_buf_;
-  sensor_msgs::ImuConstPtr imu_msg_;
-  autoware_msgs::VehicleStatusConstPtr autoware_vehicle_state_;
+  sensor_msgs::Imu imu_msg_;
+  autoware_msgs::VehicleStatus autoware_vehicle_state_;
   
   std::string hdmap_path_;
 

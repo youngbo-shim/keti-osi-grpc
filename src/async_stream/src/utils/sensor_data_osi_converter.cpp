@@ -92,7 +92,7 @@ void SensorDataOSIConverter::LidarSensorToOSI(const sensor_msgs::PointCloud2Cons
 }
 
 // Radar
-void SensorDataOSIConverter::RadarSensorToOSI(morai_msgs::RadarDetections& radardetections,
+void SensorDataOSIConverter::RadarSensorToOSI(const morai_msgs::RadarDetections& radardetections,
                                               RadarSensorView* radar_osi,
                                               const MountingPosition& radar_mount_pose,
                                               const size_t& sensor_id){
@@ -124,12 +124,13 @@ void SensorDataOSIConverter::RadarSensorToOSI(morai_msgs::RadarDetections& radar
     reflection->set_doppler_shift(0);
     reflection->set_source_horizontal_angle(radar_obj.azimuth*M_PI / 180);
 
-    auto elevation_rad = atan2(radar_mount_pose.position().z(), radar_mount_pose.position().y());
+    double xy = std::hypot(radar_obj.position.x,radar_obj.position.y);
+    auto elevation_rad = atan2(radar_obj.position.z, xy);
     reflection->set_source_vertical_angle(elevation_rad);
   }
 }
 
-void SensorDataOSIConverter::RadarSensorToOSI(radar_msgs::RadarScan& radarscans,
+void SensorDataOSIConverter::RadarSensorToOSI(const radar_msgs::RadarScan& radarscans,
                                               RadarSensorView* radar_osi,
                                               const geometry_msgs::PoseStamped::ConstPtr& radar_mount_pose,
                                               const size_t& sensor_id){
@@ -379,8 +380,8 @@ void SensorDataOSIConverter::ObjectMoraiToOSIMatching(){
   }
 }
 
-void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::ImuConstPtr& imu_ros, 
-                          const autoware_msgs::VehicleStatusConstPtr& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi){
+void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::Imu& imu_ros, 
+                                                  const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi){
   
   // Position
   double x_utm, y_utm;
@@ -393,31 +394,30 @@ void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleSt
   host_vehicle_osi->mutable_vehicle_motion()->mutable_position()->set_z(ego_vehicle_state_ros->position.z);
 
   // Orientation, angular velocity, acceleration
-  tf::Quaternion q(imu_ros->orientation.x, imu_ros->orientation.y,
-                  imu_ros->orientation.z, imu_ros->orientation.w);
+  tf::Quaternion q(imu_ros.orientation.x, imu_ros.orientation.y,
+                  imu_ros.orientation.z, imu_ros.orientation.w);
   tf::Matrix3x3 m(q);
   double roll, pitch, yaw;
   m.getRPY(roll, pitch, yaw);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation()->set_roll(roll);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation()->set_pitch(pitch);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation()->set_yaw(yaw);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_roll(imu_ros->angular_velocity.x);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_pitch(imu_ros->angular_velocity.y);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_yaw(imu_ros->angular_velocity.z);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_x(imu_ros->linear_acceleration.x);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_y(imu_ros->linear_acceleration.y);
-  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_z(imu_ros->linear_acceleration.z);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_roll(imu_ros.angular_velocity.x);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_pitch(imu_ros.angular_velocity.y);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_orientation_rate()->set_yaw(imu_ros.angular_velocity.z);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_x(imu_ros.linear_acceleration.x);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_y(imu_ros.linear_acceleration.y);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_acceleration()->set_z(imu_ros.linear_acceleration.z);
   host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(math::deg2rad(-ego_vehicle_state_ros->wheel_angle*STEER_RATIO));
 
   // veloicty
-  if(autoware_vehicle_state_ros)
-    host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(autoware_vehicle_state_ros->speed);
-  else{
+  // if(autoware_vehicle_state_ros)
+  //   host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(autoware_vehicle_state_ros.speed);    
+  // else{
     host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(ego_vehicle_state_ros->velocity.x);
     host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_y(ego_vehicle_state_ros->velocity.y);
     host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_z(ego_vehicle_state_ros->velocity.z);
-  }
-
+  // }
 }
 void SensorDataOSIConverter::EmptyObstacleToOSI(osi3::MovingObject* moving_obstacle_osi,
                                                 osi3::StationaryObject* stationary_obstacle_osi){

@@ -31,6 +31,7 @@
 #include "sensorview_rpc.grpc.pb.h"
 #include "task/task.h"
 #include "hdmap.h"
+#include "utils/string_utils.h"
 
 using grpc::Channel;
 using grpc::ClientAsyncReader;
@@ -51,10 +52,6 @@ using osi3::MovingObject;
 using osi3::StationaryObject;
 
 using namespace keti::hdmap;
-
-static constexpr unsigned int Hash(const char* str){
-  return str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * Hash(str + 1) : 8603;
-}
 
 class SensorViewClient
 {

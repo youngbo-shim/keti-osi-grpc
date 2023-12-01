@@ -9,13 +9,9 @@
 
 #include "sensorview_rpc.grpc.pb.h"
 #include "hdmap.h"
-#include "osi_client.cc"
+#include "osi_client.h"
 
 using namespace keti::hdmap;
-
-static constexpr unsigned int Hash(const char* str){
-  return str[0] ? static_cast<unsigned int>(str[0]) + 0xEDB8832Full * Hash(str + 1) : 8603;
-}
 
 class OSIBridge
 {

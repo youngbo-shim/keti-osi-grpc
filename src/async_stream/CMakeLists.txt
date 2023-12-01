@@ -32,12 +32,12 @@ catkin_package(
   # DEPENDS system_lib
 )
 
-catkin_python_setup()
+# catkin_python_setup()
 
 # Python wrapper Setup
 ## before catkin_make, `sudo apt-get install pybind11-dev`.
 find_package(PythonLibs REQUIRED)
-find_package(pybind11)
+find_package(pybind11 REQUIRED)
 
 find_package(Protobuf CONFIG REQUIRED)
 add_subdirectory(open-simulation-interface)
@@ -93,10 +93,13 @@ foreach(_target
   async_streaming_server_lidar osi_bridge_main)
   add_executable(${_target}
     "src/${_target}.cc"
+    src/osi_client.cc
     src/task/task_manager.cpp
     src/utils/sensor_data_osi_converter.cpp
     src/autoware_ros_bridge.cc
-    src/autoware_ros_converter.cc)
+    src/autoware_ros_converter.cc
+    src/keti_ros_bridge.cc
+    src/keti_ros_converter.cc)
   
   target_link_libraries(${_target}
     PUBLIC
@@ -105,9 +108,19 @@ foreach(_target
   )
 endforeach()
 
+# pybind11_add_module(osi_bridge
+#   src/libwrapper.cpp
+#   src/osi_client.cc)
+
+# target_link_libraries(osi_bridge
+#   PUBLIC
+#     sensorview_grpc_proto
+#     open_simulation_interface_static
+# )  
+
 # Python wrapper with pybind11
 set(wrapper_srcs
   src/libwrapper.cpp
-
 )
+
 add_library(client_lib ${wrapper_srcs})

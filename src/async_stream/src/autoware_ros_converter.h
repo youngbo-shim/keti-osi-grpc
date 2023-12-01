@@ -33,8 +33,6 @@
 
 #include "sensorview_rpc.grpc.pb.h"
 #include "task/task.h"
-#include "osi_bridge.cc"
-
 
 using google::protobuf::RepeatedPtrField;
 
@@ -60,10 +58,10 @@ public:
   std::pair<size_t,autoware_msgs::DetectedObjectArray> ProcObj(std::shared_ptr<RepeatedPtrField<MovingObject>> osi_moving_objs,
                                                                        std::shared_ptr<RepeatedPtrField<StationaryObject>> osi_stationary_objs,
                                                                        size_t seq);
-  std::pair<size_t,sensor_msgs::Imu> ProcImu(std::shared_ptr<HostVehicleData>& imu_sensor_view, size_t imu_seq);
-  std::pair<size_t, geometry_msgs::PoseStamped> ProcEgoVehicleState(std::shared_ptr<HostVehicleData>& ego_vehicle_state_view, size_t ego_vehicle_state_seq);
-  std::pair<size_t, geometry_msgs::TwistStamped> ProcEgoVehicleSpeed(std::shared_ptr<HostVehicleData>& ego_vehicle_state_view, size_t ego_vehicle_state_seq);
-  std::pair<size_t, morai_msgs::GPSMessage> ProcGps(std::shared_ptr<HostVehicleData>& gps_sensor_view, size_t gps_seq);
+  std::pair<size_t,sensor_msgs::Imu> ProcImu(const HostVehicleData& imu_sensor_view, size_t imu_seq);
+  std::pair<size_t, geometry_msgs::PoseStamped> ProcEgoVehicleState(const HostVehicleData& ego_vehicle_state_view, size_t ego_vehicle_state_seq);
+  std::pair<size_t, geometry_msgs::TwistStamped> ProcEgoVehicleSpeed(const HostVehicleData& ego_vehicle_state_view, size_t ego_vehicle_state_seq);
+  std::pair<size_t, morai_msgs::GPSMessage> ProcGps(const HostVehicleData& gps_sensor_view, size_t gps_seq);
   std_msgs::ColorRGBA colorCategory10(int i);
   void SetoffsetX(double x_offset){ x_offset_ = x_offset; }
   void SetoffsetY(double y_offset){ y_offset_ = y_offset; }

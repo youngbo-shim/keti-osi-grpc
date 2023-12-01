@@ -1,4 +1,4 @@
-#include "keti_ros_bridge.cc"
+#include "keti_ros_bridge.h"
 #include "autoware_ros_bridge.h"
 
 int main(int argc, char** argv){

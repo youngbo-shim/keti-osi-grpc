@@ -1,6 +1,7 @@
 #pragma once
 
 #include "autoware_ros_converter.h"
+#include "osi_bridge.h"
 
 class AutowareROSBridge : public OSIBridge
 {
