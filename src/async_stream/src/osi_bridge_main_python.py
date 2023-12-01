@@ -1,41 +1,20 @@
 #!/usr/bin/env python3
 
-import sys
-import rospy
-import ctypes
-# from client_lib import KetiROSBridge
-from ctypes import cdll
+import osi_bridge
+import threading
 
-def main():
-  rospy.init_node('grpc_client')
-  nh = rospy.NodeHandle()
+def run():
+  osi_bridge.ros_init('grpc_client')
 
-  host_name = sys.argv[0]
-  bridge_name = sys.argv[1]
+  # host_name = sys.argv[0]
+  host_name = "localhost:50051"
+  keti_ros_bridge = osi_bridge.KetiROSBridge(host_name)
 
-  osi_bridge = None
+  client_thread = threading.Thread(target=keti_ros_bridge.ClientStartListen, args=())
+  bridge_thread = threading.Thread(target=keti_ros_bridge.StartBridge,  args=())
 
-  if bridge_name == "keti":
-    rospy.loginfo("Setting Keti ROS bridge")
-
-    client_lib = cdll.LoadLibrary('../../devel/lib/libclient_lib.so')
-    ketirosbridge = client_lib.KetiROSBridge()
-    osi_bridge = ketirosbridge(host_name)
-
-  else:
-    rospy.logerr("There is no bridge named %s", bridge_name)
-    return -1
-
-  if osi_bridge is None:
-    return
-  else:
-    osi_bridge.ClientStartListen()
-    osi_bridge.StartBridge()
-
-  rospy.spin()
+  client_thread.start()
+  bridge_thread.start()
 
 if __name__ == '__main__':
-    try:
-      main()
-    except rospy.ROSInterruptException:
-      pass
+  run()

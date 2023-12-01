@@ -108,19 +108,24 @@ foreach(_target
   )
 endforeach()
 
-# pybind11_add_module(osi_bridge
-#   src/libwrapper.cpp
-#   src/osi_client.cc)
+pybind11_add_module(osi_bridge
+  src/libwrapper.cpp
+  src/osi_client.cc
+  src/task/task_manager.cpp
+  src/utils/sensor_data_osi_converter.cpp
+  src/keti_ros_bridge.cc
+  src/keti_ros_converter.cc)
 
-# target_link_libraries(osi_bridge
-#   PUBLIC
-#     sensorview_grpc_proto
-#     open_simulation_interface_static
-# )  
+target_link_libraries(osi_bridge
+  PUBLIC
+    ${_GRPC_GRPCPP}
+    sensorview_grpc_proto
+    open_simulation_interface_static
+)  
 
 # Python wrapper with pybind11
-set(wrapper_srcs
-  src/libwrapper.cpp
-)
+# set(wrapper_srcs
+#   src/libwrapper.cpp
+# )
 
-add_library(client_lib ${wrapper_srcs})
+# add_library(client_lib ${wrapper_srcs})
