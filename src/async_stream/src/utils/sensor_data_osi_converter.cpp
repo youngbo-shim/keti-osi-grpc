@@ -429,7 +429,6 @@ void SensorDataOSIConverter::NPCObstacleToOSI(const morai_msgs::ObjectStatus obs
                                               osi3::MovingObject* moving_obstacle_osi){
 
   double x_utm, y_utm, x_vel, y_vel, x_accel, y_accel;
-  double ego_heading = this->GetEgoVehicleHeading();
   double morai_tm_x_offset = this->GetMoraiTMOffset()[0];
   double morai_tm_y_offset = this->GetMoraiTMOffset()[1];
 
@@ -467,46 +466,23 @@ void SensorDataOSIConverter::NPCObstacleToOSI(const morai_msgs::ObjectStatus obs
   double obj_heading = math::deg2rad(obstacle_ros.heading);
   moving_obstacle_osi->mutable_base()->mutable_orientation()->set_yaw(obj_heading);
 
-  // To Ego vehicle coordinate
+  // To Global coordinate
   // velocity
-  double local_heading = obj_heading - ego_heading;
-
   double velocity_2d[2] = {math::kmh2ms(obstacle_ros.velocity.x), math::kmh2ms(obstacle_ros.velocity.y)};
-  x_vel = cos(local_heading)*velocity_2d[0]
-        - sin(local_heading)*velocity_2d[1];
-  y_vel = sin(local_heading)*velocity_2d[0]
-        + cos(local_heading)*velocity_2d[1];
+  x_vel = cos(obj_heading)*velocity_2d[0]
+        - sin(obj_heading)*velocity_2d[1];
+  y_vel = sin(obj_heading)*velocity_2d[0]
+        + cos(obj_heading)*velocity_2d[1];
 
   // acceleration
   double accel_2d[2] = {obstacle_ros.acceleration.x, obstacle_ros.acceleration.y};    
-  x_accel = cos(local_heading)*accel_2d[0]
-        - sin(local_heading)*accel_2d[1];
-  y_accel = sin(local_heading)*accel_2d[0]
-        + cos(local_heading)*accel_2d[1];
-
-  // To Global coordinate
-  // velocity
-  double tmp_x_vel = x_vel;
-  double tmp_y_vel = y_vel;
-
-  x_vel = cos(ego_heading)*tmp_x_vel
-          -sin(ego_heading)*tmp_y_vel;
-
-  y_vel = sin(ego_heading)*tmp_x_vel
-          +cos(ego_heading)*tmp_y_vel;
+  x_accel = cos(obj_heading)*accel_2d[0]
+          - sin(obj_heading)*accel_2d[1];
+  y_accel = sin(obj_heading)*accel_2d[0]
+          + cos(obj_heading)*accel_2d[1];
 
   moving_obstacle_osi->mutable_base()->mutable_velocity()->set_x(x_vel);
   moving_obstacle_osi->mutable_base()->mutable_velocity()->set_y(y_vel);
-                                  
-
-  double tmp_x_accel = x_accel;
-  double tmp_y_accel = y_accel;
-
-  x_accel = cos(ego_heading)*tmp_x_accel
-            -sin(ego_heading)*tmp_y_accel;
-
-  y_accel = sin(ego_heading)*tmp_x_accel
-            +cos(ego_heading)*tmp_y_accel;
 
   moving_obstacle_osi->mutable_base()->mutable_acceleration()->set_x(x_accel);
   moving_obstacle_osi->mutable_base()->mutable_acceleration()->set_y(y_accel);
@@ -517,7 +493,6 @@ void SensorDataOSIConverter::PedObstacleToOSI(const morai_msgs::ObjectStatus obs
                                               osi3::MovingObject* moving_obstacle_osi){
   
   double x_utm, y_utm, x_vel, y_vel, x_accel, y_accel;
-  double ego_heading = this->GetEgoVehicleHeading();
   double morai_tm_x_offset = this->GetMoraiTMOffset()[0];
   double morai_tm_y_offset = this->GetMoraiTMOffset()[1];
 
@@ -526,8 +501,8 @@ void SensorDataOSIConverter::PedObstacleToOSI(const morai_msgs::ObjectStatus obs
   //name
   moving_obstacle_osi->add_source_reference()->add_identifier(obstacle_ros.name);
   //size (m)
-  moving_obstacle_osi->mutable_base()->mutable_dimension()->set_width(obstacle_ros.size.x);
-  moving_obstacle_osi->mutable_base()->mutable_dimension()->set_length(obstacle_ros.size.y);
+  moving_obstacle_osi->mutable_base()->mutable_dimension()->set_length(obstacle_ros.size.x);
+  moving_obstacle_osi->mutable_base()->mutable_dimension()->set_width(obstacle_ros.size.y);
   moving_obstacle_osi->mutable_base()->mutable_dimension()->set_height(obstacle_ros.size.z);
 
   // position
@@ -542,46 +517,24 @@ void SensorDataOSIConverter::PedObstacleToOSI(const morai_msgs::ObjectStatus obs
   double obj_heading = math::deg2rad(obstacle_ros.heading);
   moving_obstacle_osi->mutable_base()->mutable_orientation()->set_yaw(obj_heading);
 
-  // To Ego vehicle coordinate
+  // To Global coordinate
   // velocity
-  double local_heading = obj_heading - ego_heading;
 
   double velocity_2d[2] = {math::kmh2ms(obstacle_ros.velocity.x), math::kmh2ms(obstacle_ros.velocity.y)};
-  x_vel = cos(local_heading)*velocity_2d[0]
-        - sin(local_heading)*velocity_2d[1];
-  y_vel = sin(local_heading)*velocity_2d[0]
-        + cos(local_heading)*velocity_2d[1];
+  x_vel = cos(obj_heading)*velocity_2d[0]
+        - sin(obj_heading)*velocity_2d[1];
+  y_vel = sin(obj_heading)*velocity_2d[0]
+        + cos(obj_heading)*velocity_2d[1];
 
   // acceleration
   double accel_2d[2] = {obstacle_ros.acceleration.x, obstacle_ros.acceleration.y};    
-  x_accel = cos(local_heading)*accel_2d[0]
-        - sin(local_heading)*accel_2d[1];
-  y_accel = sin(local_heading)*accel_2d[0]
-        + cos(local_heading)*accel_2d[1];
-
-  // To Global coordinate
-  // velocity
-  double tmp_x_vel = x_vel;
-  double tmp_y_vel = y_vel;
-
-  x_vel = cos(ego_heading)*tmp_x_vel
-          -sin(ego_heading)*tmp_y_vel;
-
-  y_vel = sin(ego_heading)*tmp_x_vel
-          +cos(ego_heading)*tmp_y_vel;
+  x_accel = cos(obj_heading)*accel_2d[0]
+          - sin(obj_heading)*accel_2d[1];
+  y_accel = sin(obj_heading)*accel_2d[0]
+          + cos(obj_heading)*accel_2d[1];
 
   moving_obstacle_osi->mutable_base()->mutable_velocity()->set_x(x_vel);
   moving_obstacle_osi->mutable_base()->mutable_velocity()->set_y(y_vel);
-                                  
-
-  double tmp_x_accel = x_accel;
-  double tmp_y_accel = y_accel;
-
-  x_accel = cos(ego_heading)*tmp_x_accel
-            -sin(ego_heading)*tmp_y_accel;
-
-  y_accel = sin(ego_heading)*tmp_x_accel
-            +cos(ego_heading)*tmp_y_accel;
 
   moving_obstacle_osi->mutable_base()->mutable_acceleration()->set_x(x_accel);
   moving_obstacle_osi->mutable_base()->mutable_acceleration()->set_y(y_accel);
@@ -591,7 +544,6 @@ void SensorDataOSIConverter::StaticObstacleToOSI(const morai_msgs::ObjectStatus 
                                                 osi3::StationaryObject* stationary_obstacle_osi){
   
   double x_utm, y_utm, x_vel, y_vel, x_accel, y_accel;
-  double ego_heading = this->GetEgoVehicleHeading();
   double morai_tm_x_offset = this->GetMoraiTMOffset()[0];
   double morai_tm_y_offset = this->GetMoraiTMOffset()[1];
 
