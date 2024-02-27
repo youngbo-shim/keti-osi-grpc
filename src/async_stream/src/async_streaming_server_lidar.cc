@@ -1,4 +1,5 @@
 #include <utils/sensor_data_osi_converter.h>
+#include "morai_ros_bridge.h"
 
 class SensorViewRPCImpl final
 {
@@ -73,7 +74,7 @@ public:
     for (size_t i = 0; i < radar_param.size(); i++){
       sub_radar_topics_[i] = nh_.subscribe<morai_msgs::RadarDetections>(radar_param[i][0], 1, 
                                                                   boost::bind(&SensorViewRPCImpl::CallbackRadarDetections, this, _1, i));
-      InitTFTable(radar_param[i][1], i, RADAR);
+      // InitTFTable(radar_param[i][1], i, RADAR);
     }
 
     sub_morai_vehicle_state_ = nh_.subscribe("/Ego_topic", 1, &SensorViewRPCImpl::CallbackVehicleState, this);
@@ -457,7 +458,7 @@ private:
             
             std::chrono::duration<double> running_time = std::chrono::system_clock::now() - start;
             std::cout.precision(3);
-            std::cout << "converting running time : " << running_time.count() * 1000 << "ms" << std::endl;
+            // std::cout << "converting running time : " << running_time.count() * 1000 << "ms" << std::endl;
           }
           
           status_ = PROCESS;
@@ -567,12 +568,24 @@ int main(int argc, char **argv)
 {
   ros::init(argc, argv, "morai_keti_bridge_grpc");
 
-  SensorViewRPCImpl server("localhost:50051");
+  std::string host_name, cmd_host_name;
+
+  host_name = argv[1];
+  cmd_host_name = argv[2];
+
+  std::cout << "host_name : " << host_name << std::endl;
+  std::cout << "cmd_host_name : " << cmd_host_name << std::endl;
+
+  SensorViewRPCImpl server(host_name);
   server.Run();
 
   std::thread thread(&SensorViewRPCImpl::HandleRpcs, &server);
+  OSIBridge *osi_bridge = new MoraiROSBridge(cmd_host_name, "");
 
-  ros::spin();
+  osi_bridge->ClientStartListen();
+  osi_bridge->StartBridge();
+
+  // ros::spin();
   thread.join();
 
   return 0;

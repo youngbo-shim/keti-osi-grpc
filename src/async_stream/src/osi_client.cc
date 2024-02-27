@@ -7,7 +7,13 @@ OSIClient::OSIClient(std::queue<SensorView> *sensor_view_buf, std::mutex *sensor
 
   grpc::ChannelArguments args;
   args.SetMaxReceiveMessageSize(1 * 1024 * 1024 * 1024);
-  stub_ = SensorViewRPC::NewStub(grpc::CreateCustomChannel(ip_address, grpc::InsecureChannelCredentials(), args));
+  auto channel = grpc::CreateCustomChannel(ip_address, grpc::InsecureChannelCredentials(), args);
+  while(channel->GetState(true) != 2){
+    std::cout << "channel is NOT READY! state : " << channel->GetState(true) << std::endl;
+    std::this_thread::sleep_for( std::chrono::milliseconds(500));
+  }
+  // stub_ = SensorViewRPC::NewStub(grpc::CreateCustomChannel(ip_address, grpc::InsecureChannelCredentials(), args));
+  stub_ = SensorViewRPC::NewStub(channel);
 
   this->onNext(true);    
 }
@@ -18,7 +24,8 @@ void OSIClient::StartListen(){
 
 void OSIClient::handleNewCallState() {
   call_ = new AsyncClientCall;
-  call_->request.set_host_name(ip_address_);
+  // call_->request.set_host_name(ip_address_);
+  std::cout << "ip_address_ : " << ip_address_ << std::endl;
 
   call_->reader = stub_->PrepareAsyncGetSensorView(&call_->context, call_->request, &cq_);
 

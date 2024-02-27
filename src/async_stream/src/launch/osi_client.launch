@@ -15,11 +15,12 @@
   <arg name="heightbarrier_filename" default="C5_HEIGHTBARRIER"/>
   <arg name="intersection_filename" default="B4_INTERSECTION"/>
   <arg name="host_name" default="localhost:50051"/>
+  <arg name="cmd_host_name" default="localhost:50052"/>
   <arg name="bridge_name" default="keti"/>
 
   <rosparam command="load" file="$(find async_stream)/src/config/config.yaml" />
   
-  <node pkg="async_stream" type="osi_bridge_main" name="osi_bridge_main" output="screen" args="$(arg host_name) $(arg bridge_name)"/>
+  <node pkg="async_stream" type="osi_bridge_main" name="osi_bridge_main" output="screen" args="$(arg host_name) $(arg cmd_host_name) $(arg bridge_name)"/>
     <param name="hdmap_from" value="$(arg hdmap_from)"/>
     <param name="data_path" value="$(arg data_path)"/>
     <param name="lane_filename" value="$(arg lane_filename)"/>

@@ -6,7 +6,7 @@
 class AutowareROSBridge : public OSIBridge
 {
 public:
-  explicit AutowareROSBridge(std::string ip_address);
+  explicit AutowareROSBridge(std::string client_ip_address, std::string server_ip_address);
   virtual ~AutowareROSBridge() = default;
   void StartBridge();
   void Stop();

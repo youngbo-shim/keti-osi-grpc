@@ -1,7 +1,7 @@
 #include "keti_ros_bridge.h"
+#define STEER_RATIO 12.3
 
-
-KetiROSBridge::KetiROSBridge(std::string ip_address) : OSIBridge(ip_address)
+KetiROSBridge::KetiROSBridge(std::string client_ip_address, std::string server_ip_address) : OSIBridge(client_ip_address, server_ip_address)
 {
   std::string hdmap_path, hdmap_from, lane_filename, link_filename, node_filename, speedbump_filename,
               safetysign_filename, surfacemark_filename, parkinglot_filename, drivewaysection_filename,
@@ -31,6 +31,7 @@ KetiROSBridge::KetiROSBridge(std::string ip_address) : OSIBridge(ip_address)
                   vehicleprotectionsafety_filename, heightbarrier_filename, intersection_filename));
 
   sub_is_changed_offset_ = nh_.subscribe("/is_changed_offset",1, &KetiROSBridge::CallbackUpdateOffsetParams, this);
+  sub_keti_cmd_ = nh_.subscribe("/vehicle_cmd", 1, &KetiROSBridge::CallbackKetiCmd, this);
 
   XmlRpc::XmlRpcValue camera_param, lidar_param, radar_param;
   nh_.getParam("camera_param", camera_param);
@@ -119,6 +120,21 @@ void KetiROSBridge::CallbackUpdateOffsetParams(const std_msgs::Bool& check){
                   vehicleprotectionsafety_filename, heightbarrier_filename, intersection_filename));
 
   std::cout << "reset hdmap!" << std::endl;
+}
+
+void KetiROSBridge::CallbackKetiCmd(const control_msgs::VehicleCMD& keti_cmd) {
+  SensorView cmd_sensor_view;
+  
+  constexpr double a_grav = 9.8;
+  cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_steering()
+                ->mutable_vehicle_steering_wheel()->set_angle(math::deg2rad(keti_cmd.steer_angle_cmd/STEER_RATIO));
+  if ( keti_cmd.AEB_decel_cmd > (std::abs(keti_cmd.accel_decel_cmd)/a_grav) ){
+    cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_motion()->mutable_acceleration()->set_x(- a_grav * keti_cmd.AEB_decel_cmd);
+  }
+  else{
+    cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_motion()->mutable_acceleration()->set_x(keti_cmd.accel_decel_cmd);
+  }
+  server_sensor_view_buf_.push(cmd_sensor_view);
 }
 
 void KetiROSBridge::ConvertThread(){ 

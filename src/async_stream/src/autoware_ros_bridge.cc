@@ -1,7 +1,7 @@
 #include "autoware_ros_bridge.h"
 
-AutowareROSBridge::AutowareROSBridge(std::string ip_address)
-          : OSIBridge(ip_address)
+AutowareROSBridge::AutowareROSBridge(std::string client_ip_address, std::string server_ip_address)
+          : OSIBridge(client_ip_address, server_ip_address)
 {
   XmlRpc::XmlRpcValue camera_param, lidar_param;
 

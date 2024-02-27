@@ -11,6 +11,7 @@
 #include "task/task.h"
 #include "osi_bridge.h"
 #include "keti_ros_converter.h"
+#include "control_msgs/VehicleCMD.h"
 
 
 class KetiROSBridge : public OSIBridge
@@ -26,13 +27,14 @@ public:
     std::queue<std::future<std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped>>> ego_state_res_table;
   };
 
-  explicit KetiROSBridge(std::string ip_address);
+  explicit KetiROSBridge(std::string client_ip_address, std::string server_ip_address);
   virtual ~KetiROSBridge() = default;
 
   void StartBridge();
   void Stop();
 
   void CallbackUpdateOffsetParams(const std_msgs::Bool& check);
+  void CallbackKetiCmd(const control_msgs::VehicleCMD& msg);
 
   void ConvertThread();
   void PublishThread();
@@ -43,7 +45,7 @@ private:
   std::vector<ros::Publisher> pub_imgs_, pub_clouds_, pub_radar_;
   ros::Publisher pub_tls_, pub_objs_, pub_vehicle_state_, pub_current_pose_;
   int num_of_camera_, num_of_lidar_, num_of_radar_;
-  ros::Subscriber sub_is_changed_offset_;
+  ros::Subscriber sub_is_changed_offset_, sub_keti_cmd_;
 
   // hdmap
   std::shared_ptr<HDMap> hdmap_;
