@@ -20,11 +20,13 @@ PYBIND11_MODULE(osi_bridge, m){
   py::class_<OSIBridge, std::unique_ptr<OSIBridge>>(m, "OSIBridge");
   
   py::class_<KetiROSBridge, OSIBridge, std::unique_ptr<KetiROSBridge>>(m, "KetiROSBridge")
-    .def(py::init<std::string>())
+    .def(py::init<std::string, std::string>())
     .def("StartBridge", &KetiROSBridge::StartBridge)
     .def("ClientStartListen", &KetiROSBridge::ClientStartListen)
+    .def("ServerStartStream", &KetiROSBridge::ServerStartStream)
     .def("Stop", &KetiROSBridge::Stop)
     .def("CallbackUpdateOffsetParams", &KetiROSBridge::CallbackUpdateOffsetParams)
+    .def("CallbackKetiCmd", &KetiROSBridge::CallbackKetiCmd)
     .def("ConvertThread", &KetiROSBridge::ConvertThread)
     .def("PublishThread", &KetiROSBridge::PublishThread);
 }
