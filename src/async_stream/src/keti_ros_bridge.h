@@ -13,6 +13,7 @@
 #include "keti_ros_converter.h"
 #include "control_msgs/VehicleCMD.h"
 
+#include "OSMPDummySensor.h"
 
 class KetiROSBridge : public OSIBridge
 {

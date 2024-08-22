@@ -168,6 +168,66 @@ void KetiROSBridge::ConvertThread(){
       int lidar_id = lidar_sensor_view->view_configuration().sensor_id().value();
       size_t seq = lidar_seq_table[lidar_id];
 
+      //TODO(All): FMU-LiDAR 센서 에러 모델링
+      fmi2CallbackFunctions callbacks = {
+        .logger = NULL,
+        .allocateMemory = NULL,
+        .freeMemory = NULL,
+        .stepFinished = NULL,
+        .componentEnvironment = NULL
+      };
+
+      COSMPDummySensor osmp_lidar("LiDAR", fmi2CoSimulation, "1", "", &callbacks, false, false);    
+      
+      int size = sensor_view.ByteSizeLong();
+      void* buffer = malloc(size);
+      sensor_view.SerializeToArray(buffer, size);  
+
+      std::cout << "bytes : " << sensor_view.ByteSizeLong() << std::endl;
+
+      size_t num_var = 3;
+      fmi2ValueReference vr_in[num_var] = { FMI_INTEGER_SENSORVIEW_IN_BASELO_IDX,
+                                            FMI_INTEGER_SENSORVIEW_IN_BASEHI_IDX,
+                                            FMI_INTEGER_SENSORVIEW_IN_SIZE_IDX };
+
+      int address_hi = 0, address_lo = 0;
+      osmp_lidar.encode_pointer_to_integer(buffer, address_hi, address_lo);
+      fmi2Integer value[num_var] = { address_lo, address_hi, size };
+
+      std::string* tmp = (std::string*)osmp_lidar.decode_integer_to_pointer(address_hi, address_lo);
+
+      std::cout << "address_hi, address_lo : " << buffer << ", " << tmp << ", " << address_hi << ", " << address_lo << std::endl;
+
+      osmp_lidar.SetInteger(vr_in, num_var, value);
+      
+      // 현재 시간 가져오기
+      auto now = std::chrono::system_clock::now();
+      auto duration = now.time_since_epoch();
+      double seconds = std::chrono::duration<double>(duration).count();
+
+      fmi2Real currentCommunicationPoint = seconds;
+      fmi2Real communicationStepSize = 0.1;
+      fmi2Boolean noSetFMUStatePriorToCurrentPointfmi2Component = false;
+
+      osmp_lidar.DoStep( currentCommunicationPoint,
+                        communicationStepSize,
+                        noSetFMUStatePriorToCurrentPointfmi2Component);
+
+      fmi2ValueReference vr_out[num_var] = { FMI_INTEGER_SENSORDATA_OUT_BASELO_IDX,
+                                            FMI_INTEGER_SENSORDATA_OUT_BASEHI_IDX,
+                                            FMI_INTEGER_SENSORDATA_OUT_SIZE_IDX };
+
+      fmi2Integer out_value[num_var];
+      osmp_lidar.GetInteger(vr_out, num_var, out_value);
+
+      auto out_buffer = osmp_lidar.decode_integer_to_pointer(out_value[1], out_value[0]);
+
+      osi3::SensorData sensor_data;
+      sensor_data.ParseFromArray(out_buffer, out_value[2]);
+
+      lidar_sensor_view = std::make_shared<LidarSensorView>(sensor_data.sensor_view(0).lidar_sensor_view(0));
+      ///////////////////////////////////////////////////////////////////////////////////
+
       msg_result_.lidar_res_table[lidar_id].push(keti::task::Async(&KetiROSConverter::ProcLidar, &converter_, lidar_sensor_view, lidar_id, seq));
       lidar_seq_table[lidar_id]++;
     }

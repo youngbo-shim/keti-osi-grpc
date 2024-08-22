@@ -4,3 +4,6 @@
 [submodule "src/autoware_ai_messages"]
 	path = src/autoware_ai_messages
 	url = https://github.com/autowarefoundation/autoware_ai_messages.git
+[submodule "src/async_stream/fmi-standard"]
+	path = src/async_stream/fmi-standard
+	url = https://github.com/modelica/fmi-standard.git
