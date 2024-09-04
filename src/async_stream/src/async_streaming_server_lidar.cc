@@ -78,7 +78,7 @@ public:
     }
 
     sub_morai_vehicle_state_ = nh_.subscribe("/Ego_topic", 1, &SensorViewRPCImpl::CallbackVehicleState, this);
-    sub_morai_gps_ = nh_.subscribe("/gps", 1, &SensorViewRPCImpl::CallbackGPS, this);
+    sub_morai_gps_ = nh_.subscribe("/gps_morai", 1, &SensorViewRPCImpl::CallbackGPS, this);
     sub_morai_object_info_ = nh_.subscribe("/Object_topic", 1, &SensorViewRPCImpl::CallbackObjectInfo, this);
     sub_morai_traffic_light_status_ = nh_.subscribe("/GetTrafficLightStatus", 1, &SensorViewRPCImpl::CallbackTrafficLight, this);
     sub_is_changed_offset_ = nh_.subscribe("/is_changed_offset",1, &SensorViewRPCImpl::CallbackUpdateOffsetParams, this);
@@ -264,8 +264,8 @@ public:
   }
 
   void CallbackUpdateOffsetParams(const std_msgs::Bool& check) {  
-    std::cout << "update offset" << std::endl;
     nh_.getParam("data_path", hdmap_path_);
+    std::cout << "update offset : " << hdmap_path_ << std::endl;
   }
 
   bool HasData(){
@@ -324,6 +324,7 @@ private:
       sensor_data_osi_converter_->TrafficLightMoraiToOSIMatching();
       sensor_data_osi_converter_->ObjectMoraiToOSIMatching();
       sensor_data_osi_converter_->SetGeoCoordConv(hdmap_path_);
+      prev_hdmap_path_ = *hdmap_path_;
 
       // Invoke the serving logic right away.
       Proceed(true);
@@ -344,6 +345,11 @@ private:
         {
           reply_.Clear();          
           has_data_ = false;
+
+          if ( prev_hdmap_path_ != *hdmap_path_) {
+            sensor_data_osi_converter_->SetGeoCoordConv(hdmap_path_);
+            prev_hdmap_path_ = *hdmap_path_;
+          }
 
           for(int i = 0 ; i < camera_buf_->size() ; i++){            
             if(camera_buf_->at(i).size() == 0) continue;
@@ -386,9 +392,9 @@ private:
           if(ego_vehicle_state_buf_->size() > 0){
             const auto& sending_ego_state = ego_vehicle_state_buf_->front();
             auto host_vehicle_view = reply_.mutable_host_vehicle_data();
+            sensor_data_osi_converter_->SetMoraiTMOffset(morai_tm_offset_);
             sensor_data_osi_converter_->EgoVehicleStateToOSI(sending_ego_state, *imu_msg_, *autoware_vehicle_state_, host_vehicle_view);
             sensor_data_osi_converter_->SetEgoVehicleHeading(host_vehicle_view->vehicle_motion().orientation().yaw() * 180.0 / M_PI);
-            sensor_data_osi_converter_->SetMoraiTMOffset(morai_tm_offset_);
             ego_vehicle_state_buf_->pop();
             has_data_ = true;
           }
@@ -509,6 +515,7 @@ private:
     double(*morai_tm_offset_)[2];
     double* ego_vehicle_heading_;
     std::string* hdmap_path_;
+    std::string prev_hdmap_path_;
     std::queue<morai_msgs::ObjectStatusListConstPtr> *obj_buf_;
     std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf_;
     std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf_;

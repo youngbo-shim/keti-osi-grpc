@@ -37,6 +37,8 @@ using osi3::HostVehicleData;
 using namespace keti::common;
 using namespace keti::hdmap;
 
+using EgoInfo = std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,std::vector<geometry_msgs::TransformStamped>>;
+
 class KetiROSConverter
 {
 public:
@@ -65,8 +67,7 @@ public:
                                                                        std::shared_ptr<RepeatedPtrField<StationaryObject>> osi_stationary_objs,
                                                                        size_t seq);
 
-  std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped> ProcEgoVehicleState(std::shared_ptr<HostVehicleData> host_vehicle_data,
-                                                                                                                               size_t seq, std::shared_ptr<HDMap> hdmap); 
+  EgoInfo ProcEgoVehicleState(std::shared_ptr<HostVehicleData> host_vehicle_data, size_t seq, std::shared_ptr<HDMap> hdmap);
 
 private:
 

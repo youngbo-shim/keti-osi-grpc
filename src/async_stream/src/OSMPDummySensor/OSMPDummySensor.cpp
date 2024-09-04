@@ -338,7 +338,7 @@ fmi2Status COSMPDummySensor::doCalc(fmi2Real currentCommunicationPoint, fmi2Real
         /* Copy of SensorView */
         currentOut.add_sensor_view()->CopyFrom(currentIn);
 
-        // sequence_of_strategies.apply(currentOut);
+        // TODO(all) : Add the user's sensor model
 
         auto lidar_sensor_view = currentOut.mutable_sensor_view(0)->mutable_lidar_sensor_view(0);
 

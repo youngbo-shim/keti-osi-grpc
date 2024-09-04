@@ -309,7 +309,8 @@ std::pair<size_t,cyber_perception_msgs::PerceptionObstacles> KetiROSConverter::P
   cyber_perception_msgs::PerceptionObstacles obstacles;
 
   obstacles.header.frame_id = "base_link";
-  obstacles.header.timestamp_sec = ros::Time::now().toSec();
+  obstacles.header.stamp = ros::Time::now();
+  obstacles.cyber_header.timestamp_sec = ros::Time::now().toSec();
 
   if(osi_moving_objs.get()->size() == 1 && osi_moving_objs.get()->Get(0).id().value() == 0 &&
       osi_stationary_objs.get()->size() == 1 && osi_stationary_objs.get()->Get(0).id().value() == 0 ){
@@ -387,11 +388,10 @@ std::pair<size_t,cyber_perception_msgs::PerceptionObstacles> KetiROSConverter::P
   return std::make_pair(seq,obstacles);
 }
 
-std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped> KetiROSConverter::ProcEgoVehicleState(std::shared_ptr<HostVehicleData> host_vehicle_data,
-                                                                                                                                               size_t seq, std::shared_ptr<HDMap> hdmap){
+EgoInfo KetiROSConverter::ProcEgoVehicleState(std::shared_ptr<HostVehicleData> host_vehicle_data, size_t seq, std::shared_ptr<HDMap> hdmap){
     control_msgs::VehicleState out_vehicle_state;
     geometry_msgs::PoseStamped cur_pose;
-    geometry_msgs::TransformStamped odom_trans;
+    std::vector<geometry_msgs::TransformStamped> buf_odom_trans;
 
     out_vehicle_state.header.stamp = ros::Time::now();
     out_vehicle_state.autonomous_status = 2;
@@ -409,14 +409,31 @@ std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry
     cur_pose.pose.position.y = out_vehicle_state.y_utm;  
     cur_pose.pose.orientation = tf::createQuaternionMsgFromYaw(out_vehicle_state.heading_utm);
 
+    geometry_msgs::TransformStamped odom_trans;    
     odom_trans.header.stamp = ros::Time::now();
-    odom_trans.header.frame_id = "map";
-    odom_trans.child_frame_id = "base_link";
+    odom_trans.header.frame_id = "/map";
+    odom_trans.child_frame_id = "/base_link_xy";
+
+    std::cout << out_vehicle_state.x_utm << ", " << out_vehicle_state.y_utm << ", " << hdmap->x_offset() << ", " << hdmap->y_offset() << std::endl;
 
     odom_trans.transform.translation.x = cur_pose.pose.position.x-hdmap->x_offset();
     odom_trans.transform.translation.y = cur_pose.pose.position.y-hdmap->y_offset();
     odom_trans.transform.translation.z = 0.0;
     odom_trans.transform.rotation = cur_pose.pose.orientation;
+    buf_odom_trans.push_back(odom_trans);
 
-    return {seq,out_vehicle_state,cur_pose,odom_trans};
+    odom_trans.child_frame_id = "/base_link";
+    tf2::Quaternion q;
+    q.setRPY(host_vehicle_data->vehicle_motion().orientation().roll(),
+             host_vehicle_data->vehicle_motion().orientation().pitch(),
+             host_vehicle_data->vehicle_motion().orientation().yaw());
+    q = q.normalize();
+
+    odom_trans.transform.rotation.x = q.getX();
+    odom_trans.transform.rotation.y = q.getY();
+    odom_trans.transform.rotation.z = q.getZ();
+    odom_trans.transform.rotation.w = q.getW();
+    buf_odom_trans.push_back(odom_trans);
+
+    return {seq,out_vehicle_state,cur_pose,buf_odom_trans};
   }

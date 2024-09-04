@@ -177,7 +177,7 @@ void KetiROSBridge::ConvertThread(){
         .componentEnvironment = NULL
       };
 
-      COSMPDummySensor osmp_lidar("LiDAR", fmi2CoSimulation, "1", "", &callbacks, false, false);    
+      COSMPDummySensor osmp_lidar("LiDAR", fmi2CoSimulation, "1", "", &callbacks, false, false);
       
       int size = sensor_view.ByteSizeLong();
       void* buffer = malloc(size);
@@ -387,7 +387,9 @@ void KetiROSBridge::PublishThread(){
         pub_current_pose_.publish(std::get<2>(msg));
 
         static tf::TransformBroadcaster odom_broadcaster;
-        odom_broadcaster.sendTransform(std::get<3>(msg));
+        for ( auto& tf : std::get<3>(msg) ){
+          odom_broadcaster.sendTransform(tf);
+        }
       } catch (const std::future_error& e) {
           if (e.code() == std::make_error_code(std::future_errc::no_state)) {
               std::cerr << "No associated state(VehicleState)" << std::endl;

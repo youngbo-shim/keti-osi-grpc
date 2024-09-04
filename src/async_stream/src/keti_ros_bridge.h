@@ -25,7 +25,7 @@ public:
     std::unordered_map<int, std::queue<std::future<std::pair<size_t,radar_msgs::RadarScan>>>> radar_res_table;
     std::queue<std::future<std::pair<size_t,perception_msgs::TrafficLights>>> tl_res_table;
     std::queue<std::future<std::pair<size_t,cyber_perception_msgs::PerceptionObstacles>>> obj_res_table;
-    std::queue<std::future<std::tuple<size_t,control_msgs::VehicleState,geometry_msgs::PoseStamped,geometry_msgs::TransformStamped>>> ego_state_res_table;
+    std::queue<std::future<EgoInfo>> ego_state_res_table;
   };
 
   explicit KetiROSBridge(std::string client_ip_address, std::string server_ip_address);
