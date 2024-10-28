@@ -4,7 +4,8 @@ project(async_stream)
 
 # set c++ compile config
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fPIC") # changed
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread -fPIC")
+set(PROTOBUF_LIBRARY protobuf::libprotobuf)
 
 include(cmake/common.cmake)
 
@@ -174,7 +175,8 @@ add_custom_command(TARGET OSMPDummySensor
 	COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:OSMPDummySensor> $<$<PLATFORM_ID:Windows>:$<$<CONFIG:Debug>:$<TARGET_PDB_FILE:OSMPDummySensor>>> "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/binaries/${FMI_BINARIES_PLATFORM}"
 	COMMAND ${CMAKE_COMMAND} -E chdir "${CMAKE_CURRENT_BINARY_DIR}/buildfmu" ${CMAKE_COMMAND} -E tar "cfv" "../OSMPDummySensor.fmu" --format=zip "modelDescription.xml" "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/sources" "${CMAKE_CURRENT_BINARY_DIR}/buildfmu/binaries/${FMI_BINARIES_PLATFORM}")
 
-##  Python bind
+
+# Usage for Python
 pybind11_add_module(osi_bridge
   src/libwrapper.cpp
   src/osi_client.cc
@@ -183,6 +185,7 @@ pybind11_add_module(osi_bridge
   src/utils/sensor_data_osi_converter.cpp
   src/keti_ros_bridge.cc
   src/keti_ros_converter.cc
+  src/morai_ros_bridge.cc
 )
 
 target_link_libraries(osi_bridge
@@ -190,11 +193,22 @@ target_link_libraries(osi_bridge
     ${_GRPC_GRPCPP}
     sensorview_grpc_proto
     open_simulation_interface_static
-)  
+)
 
-# Python wrapper with pybind11
-# set(wrapper_srcs
-#   src/libwrapper.cpp
-# )
-
-# add_library(client_lib ${wrapper_srcs})
+# Usage for Csharp
+add_library(client SHARED
+  src/libwrapper_csharp.cpp
+  src/osi_client.cc
+  src/task/task_manager.cpp
+  src/utils/sensor_data_osi_converter.cpp
+  src/keti_ros_bridge.cc
+  src/keti_ros_converter.cc
+  src/morai_ros_bridge.cc
+  src/osi_server.cc
+)
+target_link_libraries(client
+  ${catkin_LIBRARIES}
+  ${_GRPC_GRPCPP}
+  sensorview_grpc_proto
+  open_simulation_interface_static
+)
