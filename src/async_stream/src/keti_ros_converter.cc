@@ -309,8 +309,8 @@ std::pair<size_t,cyber_perception_msgs::PerceptionObstacles> KetiROSConverter::P
   cyber_perception_msgs::PerceptionObstacles obstacles;
 
   obstacles.header.frame_id = "base_link";
-  obstacles.header.stamp = ros::Time::now();
-  obstacles.cyber_header.timestamp_sec = ros::Time::now().toSec();
+  // obstacles.header.stamp = ros::Time::now();
+  obstacles.header.timestamp_sec = ros::Time::now().toSec(); // header_cyber -> header
 
   if(osi_moving_objs.get()->size() == 1 && osi_moving_objs.get()->Get(0).id().value() == 0 &&
       osi_stationary_objs.get()->size() == 1 && osi_stationary_objs.get()->Get(0).id().value() == 0 ){
