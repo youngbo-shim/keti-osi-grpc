@@ -7,3 +7,6 @@
 [submodule "src/async_stream/fmi-standard"]
 	path = src/async_stream/fmi-standard
 	url = https://github.com/modelica/fmi-standard.git
+[submodule "src/MORAI-ROS_morai_msgs"]
+	path = src/MORAI-ROS_morai_msgs
+	url = https://github.com/MORAI-Autonomous/MORAI-ROS_morai_msgs.git
