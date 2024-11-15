@@ -31,15 +31,36 @@ AutowareROSBridge::AutowareROSBridge(std::string client_ip_address, std::string 
   pub_gps_ = nh_.advertise<morai_msgs::GPSMessage>("/grpc/gps", 1);
   pub_autoware_ego_state_ = nh_.advertise<geometry_msgs::PoseStamped>("/grpc/autoware_ego_vehicle_state", 1);
   pub_autoware_ego_speed_ = nh_.advertise<geometry_msgs::TwistStamped>("/estimate_twist", 1);
+  sub_autoware_cmd_ = nh_.subscribe("/ctrl_cmd", 1, &AutowareROSBridge::CallbackAutowareCmd, this);
 
-  nh_.getParam("x_offset", x_offset_);
-  nh_.getParam("y_offset", y_offset_);
-
-  converter_.SetoffsetX(x_offset_);
-  converter_.SetoffsetY(y_offset_);
+  if(nh_.hasParam("x_offset") && nh_.hasParam("y_offset")){
+    nh_.getParam("x_offset", x_offset_);
+    nh_.getParam("y_offset", y_offset_);
+    converter_.SetoffsetX(x_offset_);
+    converter_.SetoffsetY(y_offset_);
+  }
 
   is_initialized_ = true;
 
+}
+
+void AutowareROSBridge::CallbackAutowareCmd(const autoware_msgs::ControlCommandStamped& ctrl_msg){
+
+  // std::cout << "AutowareROSBridge::CallbackAutowareCmd callack " << std::endl;
+  // SensorView cmd_sensor_view;
+  // cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_steering()
+  //               ->mutable_vehicle_steering_wheel()->set_angle(ctrl_msg.cmd.steering_angle);
+  // cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_motion()->mutable_acceleration()->set_x(ctrl_msg.cmd.linear_acceleration);
+  // cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_motion()->mutable_velocity()->set_x(ctrl_msg.cmd.linear_velocity);
+  
+  // server_sensor_view_buf_.push(cmd_sensor_view);
+
+  SensorView cmd_sensor_view;
+  cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_steering()
+                ->mutable_vehicle_steering_wheel()->set_angle(ctrl_msg.cmd.steering_angle); ///STEER_RATIO
+  cmd_sensor_view.mutable_host_vehicle_data()->mutable_vehicle_motion()->mutable_acceleration()->set_x(ctrl_msg.cmd.linear_acceleration * 0.5);
+  
+  server_sensor_view_buf_.push(cmd_sensor_view);
 }
 
 void AutowareROSBridge::StartBridge(){
@@ -97,6 +118,16 @@ void AutowareROSBridge::ConvertThread(){
       size_t seq = camera_seq_table[camera_id];
       msg_result_.camera_res_table[camera_id].push(keti::task::Async(&AutowareROSConverter::ProcCamera, &converter_, camera_sensor_view, camera_id, seq));
       camera_seq_table[camera_id]++;
+    }
+
+    if(!is_map_offset_initialized_){
+      if(nh_.hasParam("x_offset") && nh_.hasParam("y_offset")){
+        nh_.getParam("x_offset", x_offset_);
+        nh_.getParam("y_offset", y_offset_);
+        converter_.SetoffsetX(x_offset_);
+        converter_.SetoffsetY(y_offset_);
+        is_map_offset_initialized_ = true;
+      }
     }
 
     if ( sensor_view.global_ground_truth().moving_object_size() > 0 || sensor_view.global_ground_truth().stationary_object_size() > 0 ){      

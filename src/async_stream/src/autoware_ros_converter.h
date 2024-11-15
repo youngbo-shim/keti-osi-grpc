@@ -29,6 +29,7 @@
 #include <morai_msgs/ObjectStatusList.h>
 #include <autoware_msgs/DetectedObjectArray.h>
 #include <autoware_msgs/DetectedObject.h>
+#include <autoware_msgs/ControlCommandStamped.h>
 #include <visualization_msgs/MarkerArray.h>
 
 #include "sensorview_rpc.grpc.pb.h"

@@ -2,6 +2,7 @@
 
 #include "autoware_ros_converter.h"
 #include "osi_bridge.h"
+#define STEER_RATIO 12.3
 
 class AutowareROSBridge : public OSIBridge
 {
@@ -12,6 +13,7 @@ public:
   void Stop();
   void ConvertThread();
   void PublishThread();
+  void CallbackAutowareCmd(const autoware_msgs::ControlCommandStamped& ctrl_msg);
 
   struct MsgResult
   {
@@ -31,7 +33,7 @@ private:
   ros::Publisher pub_tls_, pub_objs_, pub_imu_, pub_gps_, pub_morai_ego_state_, 
                  pub_autoware_ego_state_, pub_autoware_ego_speed_, pub_autoware_objects_;
   int num_of_camera_, num_of_lidar_;
-  ros::Subscriber sub_is_changed_offset_;
+  ros::Subscriber sub_is_changed_offset_, sub_autoware_cmd_;
   double x_offset_, y_offset_;
 
   // converting
@@ -39,4 +41,5 @@ private:
   AutowareROSConverter converter_;
 
   bool is_initialized_ = false;
+  bool is_map_offset_initialized_ = false;
 };
