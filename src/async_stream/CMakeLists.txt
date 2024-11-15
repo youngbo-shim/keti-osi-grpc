@@ -97,6 +97,73 @@ target_link_libraries(sensorview_grpc_proto
   open_simulation_interface_static
 )
 
+#Apollo proto code Generation
+set(apllo_proto_srcs)
+
+set(apollo_protos_list
+  # common
+  apollo_header
+  apollo_error_code
+  apollo_geometry
+  apollo_vehicle_signal
+  apollo_drive_state
+  apollo_vehicle_config
+  apollo_pnc_point
+  # gnss
+  apollo_gnss_best_pose
+  apollo_imu
+  apollo_ins
+  # localization
+  apollo_pose
+  apollo_gps
+  apollo_corimu
+  # canbus
+  apollo_chassis
+  # map
+  apollo_map_id
+  apollo_map_geometry
+  apollo_map_lane
+  # perception
+  apollo_traffic_light_detection
+  apollo_perception_obstacle
+  # control
+  apollo_pad_msg
+  apollo_input_debug
+  apollo_control_cmd
+  apollo_udp_bridge_remote_info
+  apollo_monitor_log
+  # camera
+  apollo_sensor_image
+  # lidar (VLP128)
+  apollo_velodyne
+)
+
+foreach(protos_name ${apollo_protos_list})
+  set(PROTO_SRC ${CMAKE_CURRENT_BINARY_DIR}/${protos_name}.pb.cc)
+  set(PROTO_HDR ${CMAKE_CURRENT_BINARY_DIR}/${protos_name}.pb.h)
+  get_filename_component(PROTO_FILE "protos/apollo_proto/${protos_name}.proto" ABSOLUTE)
+  get_filename_component(PROTO_FILE_PATH "${PROTO_FILE}" PATH)
+
+  add_custom_command(
+    OUTPUT "${PROTO_SRC}" "${PROTO_HDR}"
+    COMMAND protoc
+    ARGS -I "${PROTO_FILE_PATH}"
+      --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
+      "${PROTO_FILE}"
+    DEPENDS "${PROTO_FILE}"
+  )
+  list(APPEND apllo_proto_srcs ${PROTO_SRC} ${PROTO_HDR})
+endforeach()
+
+add_library(apollo_protos
+  ${apllo_proto_srcs}
+)
+
+target_link_libraries(apollo_protos
+  ${catkin_LIBRARIES}
+  ${PROTOBUF_LIBRARY}
+)
+
 set(OSMP_srcs
   src/OSMPDummySensor/OSMPDummySensor.cpp)
 
@@ -113,10 +180,16 @@ foreach(_target
     src/keti_ros_converter.cc
     src/morai_ros_bridge.cc
     src/osi_server.cc
+    src/utils/apollo_bridge_header.cc
+    src/utils/apollo_bridge_buffer.cc
+    src/utils/apollo_udp_bridge_receiver_component.cc
+    src/apollo_ros_converter.cc
+    src/apollo_ros_bridge.cc    
     ${OSMP_srcs})
   
   target_link_libraries(${_target}
     PUBLIC
+      apollo_protos
       sensorview_grpc_proto
       open_simulation_interface_static
   )

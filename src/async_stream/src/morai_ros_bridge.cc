@@ -1,13 +1,25 @@
 #include "morai_ros_bridge.h"
 #include "morai_msgs/CtrlCmd.h"
+#include <autoware_msgs/ControlCommandStamped.h>
 
 MoraiROSBridge::MoraiROSBridge(std::string client_ip_address, std::string server_ip_address) : OSIBridge(client_ip_address, server_ip_address)
 {
-  pub_morai_cmd_ = nh_.advertise<morai_msgs::CtrlCmd>("/ctrl_cmd", 1);
-
-  std::cout << "finished" << std::endl;
 
   is_initialized_ = true;
+  nh_.getParam("/bridge_name", bridge_name_);
+  std::cout << "(MoraiROSBridge) bridge_name: " << bridge_name_ << std::endl;
+  if(!bridge_name_.empty()){
+    if(!bridge_name_.compare("keti"))
+      pub_morai_cmd_ = nh_.advertise<morai_msgs::CtrlCmd>("/ctrl_cmd", 1);
+    else if(!bridge_name_.compare("autoware"))
+      pub_morai_cmd_ = nh_.advertise<morai_msgs::CtrlCmd>("/grpc/autoware_ctrl_cmd", 1);
+    else if(!bridge_name_.compare("apollo"))
+      pub_morai_cmd_ = nh_.advertise<morai_msgs::CtrlCmd>("/grpc/apollo_ctrl_cmd", 1);
+    else{}
+
+  }
+  else
+    std::cout << "bridge_name is not set " << std::endl;
 }
 
 void MoraiROSBridge::StartBridge(){

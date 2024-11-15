@@ -68,6 +68,24 @@ using ObjTable = std::map<std::pair<int, std::string>, osi3::MovingObject::Vehic
 
 class SensorDataOSIConverter {
   public:
+    enum class VehicleGearStatus
+    {
+      NEUTRAL,
+      DRIVE,
+      REVERSE,
+      PARKING
+    };
+    enum class VehicleMode
+    {
+      MANUAL,
+      AUTO
+    };
+    struct VehicleGearAndModeInfo {
+      VehicleGearStatus vehicle_gear_status;
+      VehicleMode vehicle_mode;
+    };
+
+  public:
 
     SensorDataOSIConverter();
     ~SensorDataOSIConverter();
@@ -86,8 +104,9 @@ class SensorDataOSIConverter {
     TypeTable GetMoraiToOSITrafficLightMatchingTable() { return morai_to_osi_matching_table_tl_; }
     void ObjectMoraiToOSIMatching();
     ObjTable GetMoraiToOSIObstacleMatchingTable() { return morai_to_osi_matching_table_obj_; }
-    void EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::Imu& imu_ros, 
-                             const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi);
+    void EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::Imu& imu_ros, const morai_msgs::GPSMessage& gps_morai, 
+                             const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, const VehicleGearAndModeInfo& vehicle_gear_and_mode_info,
+                             HostVehicleData* host_vehicle_osi);
     double GetEgoVehicleHeading () { return ego_vehicle_heading_; }
     double SetEgoVehicleHeading (double ege_vehicle_heading) { return ego_vehicle_heading_ = ege_vehicle_heading; }
     void EmptyObstacleToOSI(osi3::MovingObject* moving_obstacle_osi,
@@ -99,6 +118,9 @@ class SensorDataOSIConverter {
     double* GetMoraiTMOffset(){ return morai_tm_offset_; }
     void SetGeoCoordConv(const std::string* hdmap_path);
     CGeoCoordConv GetGeoCoordConv() { return geo_conv_; }
+    CGeoCoordConv GetApolloOffsetCalGeoCoordConv() { return apollo_offset_cal_geo_conv_; }
+    bool GetNeedRealTimeOffsetCal() { return need_real_time_offset_cal_; }
+    void CalculateMoraiUtmOffset(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const morai_msgs::GPSMessage& gps_morai);
 
   private:
     std::unordered_map<std::string, std::vector<std::string>> id_table_;
@@ -108,4 +130,7 @@ class SensorDataOSIConverter {
     std::string hdmap_path_;
     double morai_tm_offset_[2];
     CGeoCoordConv geo_conv_;
+    CGeoCoordConv apollo_offset_cal_geo_conv_;
+    bool need_real_time_offset_cal_ = false;
+
 };

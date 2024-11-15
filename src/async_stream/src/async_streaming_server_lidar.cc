@@ -1,6 +1,10 @@
 #include <utils/sensor_data_osi_converter.h>
 #include "morai_ros_bridge.h"
 
+using VehicleGearStatus = SensorDataOSIConverter::VehicleGearStatus;
+using VehicleMode = SensorDataOSIConverter::VehicleMode;
+using VehicleGearAndModeInfo = SensorDataOSIConverter::VehicleGearAndModeInfo;
+
 class SensorViewRPCImpl final
 {
 public:
@@ -11,6 +15,7 @@ public:
     nh_.getParam("lidar_param", lidar_param);
     nh_.getParam("radar_param", radar_param);
     nh_.getParam("data_path", hdmap_path_);
+    nh_.getParam("bridge_name", bridge_name_);
 
     std::cout << "camera_param : size = " << camera_param.size() << std::endl;
     if(camera_param.getType() == XmlRpc::XmlRpcValue::TypeArray &&
@@ -84,6 +89,9 @@ public:
     sub_is_changed_offset_ = nh_.subscribe("/is_changed_offset",1, &SensorViewRPCImpl::CallbackUpdateOffsetParams, this);
     sub_morai_imu_ = nh_.subscribe("/imu", 1, &SensorViewRPCImpl::CallbackImu, this);
     sub_autoware_ego_state_ = nh_.subscribe("/Autoware_ego_topic", 1, &SensorViewRPCImpl::CallbackAutowareEgoState, this);
+    morai_ctrl_cli_ = nh_.serviceClient<morai_msgs::MoraiEventCmdSrv>("/Service_MoraiEventCmd");
+    vehicle_spec_timer_ = nh_.createTimer(ros::Duration(0.1), &SensorViewRPCImpl::MoraiVehicleCtrlCallback, this);
+    is_changed_params_ = false;
 
     for(int i = 0 ; i < camera_tf_buf_.size() ; i++){
       auto tf = camera_tf_buf_[i];
@@ -194,7 +202,8 @@ public:
     // Spawn a new CallData instance to serve new clients.
     new CallData(&service_, cq_.get(), &camera_buf_, &lidar_buf_, &radar_buf_,
                  &camera_tf_buf_, &lidar_tf_buf_, &radar_tf_buf_,
-                 &obj_buf_, &tl_buf_, &ego_vehicle_state_buf_, &imu_msg_, &autoware_vehicle_state_,
+                //  &obj_buf_, &tl_buf_, &ego_vehicle_state_buf_, &imu_msg_, &autoware_vehicle_state_,
+                 &obj_buf_, &tl_buf_, &ego_vehicle_state_buf_, &imu_msg_, &gps_msg_, &autoware_vehicle_state_, &vehicle_gear_and_mode_info_,
                  &morai_tm_offset_, &ego_vehicle_heading_, &hdmap_path_);
     void *tag; // uniquely identifies a request.
     bool ok;
@@ -245,6 +254,30 @@ public:
   void CallbackGPS(const morai_msgs::GPSMessagePtr& gps){
     morai_tm_offset_[0] = gps->eastOffset;
     morai_tm_offset_[1] = gps->northOffset;
+    gps_msg_ = *gps;
+    if(!bridge_name_.compare("apollo")){
+
+      morai_tm_offset_[0] = 267262.707;
+      morai_tm_offset_[1] = 3709764.8995;
+      // offset from juju map origin (converted from lat, lng)
+      // morai_tm_offset_[0] = 267255.863;
+      // morai_tm_offset_[1] = 3709764.154;
+    }
+    else{
+      morai_tm_offset_[0] = gps->eastOffset;
+      morai_tm_offset_[1] = gps->northOffset;
+    }
+    if(!nh_.hasParam("x_offset") || !nh_.hasParam("y_offset")){
+      nh_.setParam("x_offset", morai_tm_offset_[0]);
+      nh_.setParam("y_offset", morai_tm_offset_[1]);
+    }
+    if(is_changed_params_){      
+      nh_.setParam("x_offset", morai_tm_offset_[0]);
+      nh_.setParam("y_offset", morai_tm_offset_[1]);
+      is_changed_params_ = false;
+    }
+
+    // std::cout << "morai_tm_offset_: " << morai_tm_offset_[0] << " " << morai_tm_offset_[1] << std::endl;
   }
 
   void CallbackImu( const sensor_msgs::ImuConstPtr& imu ){
@@ -268,6 +301,33 @@ public:
     std::cout << "update offset : " << hdmap_path_ << std::endl;
   }
 
+  void MoraiVehicleCtrlCallback(const ros::TimerEvent&) {
+    morai_msgs::MoraiEventCmdSrv morai_ctrl_srv;
+    morai_ctrl_srv.request.request.option = 0; 
+    
+    if ( morai_ctrl_cli_.call(morai_ctrl_srv)){
+      if ( morai_ctrl_srv.response.response.ctrl_mode == 3 ){ // auto mode
+        vehicle_gear_and_mode_info_.vehicle_mode = VehicleMode::AUTO;
+      }
+      else{
+        vehicle_gear_and_mode_info_.vehicle_mode = VehicleMode::MANUAL;
+      }
+
+      if ( morai_ctrl_srv.response.response.gear == 1 ){ // PARKING
+        vehicle_gear_and_mode_info_.vehicle_gear_status = VehicleGearStatus::PARKING;
+      }
+      else if ( morai_ctrl_srv.response.response.gear == 2 ){ // REVERSE
+        vehicle_gear_and_mode_info_.vehicle_gear_status = VehicleGearStatus::REVERSE;
+      }
+      else if ( morai_ctrl_srv.response.response.gear == 3 ){ // NEUTRAL
+        vehicle_gear_and_mode_info_.vehicle_gear_status = VehicleGearStatus::NEUTRAL;
+      }
+      else{ // DRIVE
+        vehicle_gear_and_mode_info_.vehicle_gear_status = VehicleGearStatus::DRIVE;
+      }
+    }
+  }
+    
   bool HasData(){
     for(auto& camera_buf : camera_buf_){
       if(!camera_buf.empty()) return true;
@@ -309,12 +369,14 @@ private:
             std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf,
             std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf,
             sensor_msgs::Imu *imu_msg,
+            morai_msgs::GPSMessage *gps_msg,
             autoware_msgs::VehicleStatus *autoware_vehicle_state,
+            VehicleGearAndModeInfo *vehicle_gear_and_mode_info,
             double(*morai_tm_offset)[2], double* ego_vehicle_heading, std::string* hdmap_path)
         : service_(service), cq_(cq), camera_buf_(camera_buf), lidar_buf_(lidar_buf), radar_buf_(radar_buf),
           camera_tf_buf_(camera_tf_buf), lidar_tf_buf_(lidar_tf_buf), radar_tf_buf_(radar_tf_buf),
-          obj_buf_(obj_buf), tl_buf_(tl_buf), ego_vehicle_state_buf_(ego_vehicle_state_buf), imu_msg_(imu_msg), autoware_vehicle_state_(autoware_vehicle_state),
-          morai_tm_offset_(morai_tm_offset), ego_vehicle_heading_(ego_vehicle_heading), hdmap_path_(hdmap_path), responder_(&ctx_), status_(CREATE)
+          obj_buf_(obj_buf), tl_buf_(tl_buf), ego_vehicle_state_buf_(ego_vehicle_state_buf), imu_msg_(imu_msg), gps_msg_(gps_msg), autoware_vehicle_state_(autoware_vehicle_state),
+          vehicle_gear_and_mode_info_(vehicle_gear_and_mode_info), morai_tm_offset_(morai_tm_offset), ego_vehicle_heading_(ego_vehicle_heading), hdmap_path_(hdmap_path), responder_(&ctx_), status_(CREATE)
     {
       num_writing_ = 0;
       sensor_data_osi_converter_ = std::make_shared<SensorDataOSIConverter>();
@@ -392,8 +454,12 @@ private:
           if(ego_vehicle_state_buf_->size() > 0){
             const auto& sending_ego_state = ego_vehicle_state_buf_->front();
             auto host_vehicle_view = reply_.mutable_host_vehicle_data();
-            sensor_data_osi_converter_->SetMoraiTMOffset(morai_tm_offset_);
-            sensor_data_osi_converter_->EgoVehicleStateToOSI(sending_ego_state, *imu_msg_, *autoware_vehicle_state_, host_vehicle_view);
+            if(sensor_data_osi_converter_->GetNeedRealTimeOffsetCal())
+              sensor_data_osi_converter_->CalculateMoraiUtmOffset(sending_ego_state, *gps_msg_);
+            else
+              sensor_data_osi_converter_->SetMoraiTMOffset(morai_tm_offset_);
+            sensor_data_osi_converter_->EgoVehicleStateToOSI(sending_ego_state, *imu_msg_, *gps_msg_, *autoware_vehicle_state_, *vehicle_gear_and_mode_info_, host_vehicle_view);
+            // sensor_data_osi_converter_->EgoVehicleStateToOSI(sending_ego_state, *imu_msg_, *autoware_vehicle_state_, host_vehicle_view);
             sensor_data_osi_converter_->SetEgoVehicleHeading(host_vehicle_view->vehicle_motion().orientation().yaw() * 180.0 / M_PI);
             ego_vehicle_state_buf_->pop();
             has_data_ = true;
@@ -520,7 +586,9 @@ private:
     std::queue<morai_msgs::EgoVehicleStatusConstPtr> *ego_vehicle_state_buf_;
     std::queue<morai_msgs::GetTrafficLightStatusPtr> *tl_buf_;
     sensor_msgs::Imu *imu_msg_;
+    morai_msgs::GPSMessage *gps_msg_;
     autoware_msgs::VehicleStatus *autoware_vehicle_state_;
+    VehicleGearAndModeInfo *vehicle_gear_and_mode_info_;
 
     // The means to get back to the client.
     ServerAsyncWriter<SensorView> responder_;
@@ -559,9 +627,11 @@ private:
   std::queue<morai_msgs::EgoVehicleStatusConstPtr> ego_vehicle_state_buf_;
   std::queue<morai_msgs::GetTrafficLightStatusPtr> tl_buf_;
   sensor_msgs::Imu imu_msg_;
+  morai_msgs::GPSMessage gps_msg_;
   autoware_msgs::VehicleStatus autoware_vehicle_state_;
   
   std::string hdmap_path_;
+  std::string bridge_name_;
 
   // ros
   ros::NodeHandle nh_;
@@ -569,6 +639,12 @@ private:
   ros::Subscriber sub_morai_vehicle_state_, sub_morai_gps_, sub_morai_object_info_, sub_morai_traffic_light_status_,
                   sub_is_changed_offset_, sub_morai_imu_, sub_autoware_ego_state_;
 
+  ros::ServiceClient morai_ctrl_cli_;
+  ros::Timer vehicle_spec_timer_;
+  
+  bool is_changed_params_;
+
+  VehicleGearAndModeInfo vehicle_gear_and_mode_info_;
 };
 
 int main(int argc, char **argv)

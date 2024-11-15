@@ -1,5 +1,6 @@
 #include "keti_ros_bridge.h"
 #include "autoware_ros_bridge.h"
+#include "apollo_ros_bridge.h"
 
 int main(int argc, char** argv){
   ros::init(argc, argv, "grpc bridge");
@@ -25,6 +26,11 @@ int main(int argc, char** argv){
     osi_bridge = new AutowareROSBridge(host_name, cmd_host_name);
   }
   
+  else if(bridge_name == "apollo"){
+    std::cout << "set apollo ros bridge" << std::endl;
+    osi_bridge = new ApolloROSBridge(host_name, cmd_host_name);
+  }
+
   else{
     std::cout << "there is no bridge named " << bridge_name << std::endl;
     return -1;

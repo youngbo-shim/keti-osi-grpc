@@ -27,4 +27,5 @@ private:
   ros::Publisher pub_morai_cmd_;
 
   bool is_initialized_ = false;
+  std::string bridge_name_;
 };

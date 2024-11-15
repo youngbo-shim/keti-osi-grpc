@@ -380,8 +380,10 @@ void SensorDataOSIConverter::ObjectMoraiToOSIMatching(){
   }
 }
 
-void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, const sensor_msgs::Imu& imu_ros, 
-                                                  const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, HostVehicleData* host_vehicle_osi){
+void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, 
+                                                  const sensor_msgs::Imu& imu_ros, const morai_msgs::GPSMessage& gps_morai,
+                                                  const autoware_msgs::VehicleStatus& autoware_vehicle_state_ros, const VehicleGearAndModeInfo& vehicle_gear_and_mode_info,
+                                                  HostVehicleData* host_vehicle_osi){
   
   // Position
   double x_utm, y_utm;
@@ -393,6 +395,10 @@ void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleSt
   host_vehicle_osi->mutable_vehicle_motion()->mutable_position()->set_y(y_utm);
   host_vehicle_osi->mutable_vehicle_motion()->mutable_position()->set_z(ego_vehicle_state_ros->position.z);
 
+  // lat, lng, alt
+  host_vehicle_osi->mutable_vehicle_localization()->mutable_geodetic_position()->set_latitude(gps_morai.latitude);
+  host_vehicle_osi->mutable_vehicle_localization()->mutable_geodetic_position()->set_longitude(gps_morai.longitude);
+  host_vehicle_osi->mutable_vehicle_localization()->mutable_geodetic_position()->set_altitude(gps_morai.altitude);
   // Orientation, angular velocity, acceleration
   tf::Quaternion q(imu_ros.orientation.x, imu_ros.orientation.y,
                   imu_ros.orientation.z, imu_ros.orientation.w);
@@ -411,13 +417,31 @@ void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleSt
   host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(math::deg2rad(-ego_vehicle_state_ros->wheel_angle*STEER_RATIO));
 
   // veloicty
-  // if(autoware_vehicle_state_ros)
-  //   host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(autoware_vehicle_state_ros.speed);    
-  // else{
-    host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(ego_vehicle_state_ros->velocity.x);
-    host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_y(ego_vehicle_state_ros->velocity.y);
-    host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_z(ego_vehicle_state_ros->velocity.z);
-  // }
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_x(ego_vehicle_state_ros->velocity.x);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_y(ego_vehicle_state_ros->velocity.y);
+  host_vehicle_osi->mutable_vehicle_motion()->mutable_velocity()->set_z(ego_vehicle_state_ros->velocity.z);
+
+  // accel, brake position
+  host_vehicle_osi->mutable_vehicle_brake_system()->set_pedal_position_brake(ego_vehicle_state_ros->brake);
+  host_vehicle_osi->mutable_vehicle_powertrain()->set_pedal_position_acceleration(ego_vehicle_state_ros->accel);
+
+  // steering angle
+  host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(ego_vehicle_state_ros->wheel_angle);
+  
+  // gear : parking, reverse, netral, drive
+  host_vehicle_osi->mutable_vehicle_powertrain()->set_gear_transmission(int(vehicle_gear_and_mode_info.vehicle_gear_status));
+  // vehicle mode: auto, manual
+  host_vehicle_osi->clear_vehicle_automated_driving_function();
+
+  auto vehicle_automated_driving_function = host_vehicle_osi->add_vehicle_automated_driving_function();
+  if(int(vehicle_gear_and_mode_info.vehicle_mode)){
+    vehicle_automated_driving_function->set_custom_name("AUTO");
+  }
+  else{
+    vehicle_automated_driving_function->set_custom_name("MANUAL");
+  }
+  vehicle_automated_driving_function->set_state(HostVehicleData::VehicleAutomatedDrivingFunction::State::HostVehicleData_VehicleAutomatedDrivingFunction_State_STATE_ACTIVE);
+
 }
 void SensorDataOSIConverter::EmptyObstacleToOSI(osi3::MovingObject* moving_obstacle_osi,
                                                 osi3::StationaryObject* stationary_obstacle_osi){
@@ -455,9 +479,12 @@ void SensorDataOSIConverter::NPCObstacleToOSI(const morai_msgs::ObjectStatus obs
   moving_obstacle_osi->mutable_base()->mutable_dimension()->set_height(obstacle_ros.size.z);
 
   // position
-  this->GetGeoCoordConv().Conv(obstacle_ros.position.x + morai_tm_x_offset,
-                obstacle_ros.position.y + morai_tm_y_offset,
-                x_utm, y_utm);
+  // this->GetGeoCoordConv().Conv(obstacle_ros.position.x + morai_tm_x_offset,
+  //               obstacle_ros.position.y + morai_tm_y_offset,
+  //               x_utm, y_utm);
+  x_utm = obstacle_ros.position.x + this->GetMoraiTMOffset()[0];
+  y_utm = obstacle_ros.position.y + this->GetMoraiTMOffset()[1];
+
   moving_obstacle_osi->mutable_base()->mutable_position()->set_x(x_utm);
   moving_obstacle_osi->mutable_base()->mutable_position()->set_y(y_utm);
   // moving_obstacle_osi->mutable_base()->mutable_position()->set_z(obstacle_ros.position.z);
@@ -581,4 +608,29 @@ void SensorDataOSIConverter::SetGeoCoordConv(const std::string* hdmap_path){
     geo_conv_ = CGeoCoordConv(GeoEllips::kWgs84, GeoSystem::kUtm52,
                             GeoEllips::kWgs84, GeoSystem::kUtm52);
   }
+
+  else if(hdmap_path->substr(hdmap_path->rfind("/")+1) == "JeJu Airport HD Map"){
+    geo_conv_ = CGeoCoordConv(GeoEllips::kWgs84, GeoSystem::kUtm52,
+                            GeoEllips::kWgs84, GeoSystem::kUtm52);
+    // lat, lng -> utm
+    apollo_offset_cal_geo_conv_ = CGeoCoordConv(GeoEllips::kWgs84, GeoSystem::kGeographic,
+                            GeoEllips::kWgs84, GeoSystem::kUtm52);
+    need_real_time_offset_cal_ = true;
+    std::cout << "(SetGeoCoordConv) JeJu Airport HD Map " << std::endl;
+    
+  }  
+}
+
+void SensorDataOSIConverter::CalculateMoraiUtmOffset(const morai_msgs::EgoVehicleStatusConstPtr& ego_vehicle_state_ros, 
+                                                    const morai_msgs::GPSMessage& gps_morai){
+  double x_utm, y_utm;
+  double morai_utm_offset[2];
+  this->GetApolloOffsetCalGeoCoordConv().Conv(gps_morai.longitude,
+                                              gps_morai.latitude,
+                                              x_utm, y_utm);
+  morai_utm_offset[0] = x_utm - ego_vehicle_state_ros->position.x;
+  morai_utm_offset[1] = y_utm - ego_vehicle_state_ros->position.y;
+  SetMoraiTMOffset(&morai_utm_offset);
+  std::setprecision(3);
+
 }
