@@ -426,7 +426,7 @@ void SensorDataOSIConverter::EgoVehicleStateToOSI(const morai_msgs::EgoVehicleSt
   host_vehicle_osi->mutable_vehicle_powertrain()->set_pedal_position_acceleration(ego_vehicle_state_ros->accel);
 
   // steering angle
-  host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(ego_vehicle_state_ros->wheel_angle);
+  // host_vehicle_osi->mutable_vehicle_steering()->mutable_vehicle_steering_wheel()->set_angle(ego_vehicle_state_ros->wheel_angle);
   
   // gear : parking, reverse, netral, drive
   host_vehicle_osi->mutable_vehicle_powertrain()->set_gear_transmission(int(vehicle_gear_and_mode_info.vehicle_gear_status));

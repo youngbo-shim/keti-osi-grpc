@@ -414,7 +414,7 @@ EgoInfo KetiROSConverter::ProcEgoVehicleState(std::shared_ptr<HostVehicleData> h
     odom_trans.header.frame_id = "/map";
     odom_trans.child_frame_id = "/base_link_xy";
 
-    std::cout << out_vehicle_state.x_utm << ", " << out_vehicle_state.y_utm << ", " << hdmap->x_offset() << ", " << hdmap->y_offset() << std::endl;
+    // std::cout << out_vehicle_state.x_utm << ", " << out_vehicle_state.y_utm << ", " << hdmap->x_offset() << ", " << hdmap->y_offset() << std::endl;
 
     odom_trans.transform.translation.x = cur_pose.pose.position.x-hdmap->x_offset();
     odom_trans.transform.translation.y = cur_pose.pose.position.y-hdmap->y_offset();

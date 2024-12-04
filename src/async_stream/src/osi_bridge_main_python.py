@@ -14,9 +14,9 @@ def run():
   client_thread = threading.Thread(target=keti_ros_bridge.ClientStartListen, args=())
   server_thread = threading.Thread(target=keti_ros_bridge.ServerStartStream, args=())
 
-  bridge_thread.start()
   client_thread.start()
   server_thread.start()
+  bridge_thread.start()
 
 if __name__ == '__main__':
   run()

@@ -7,4 +7,5 @@
   
   <node pkg="async_stream" type="osi_bridge_main" name="osi_bridge_main" output="screen" args="$(arg host_name) $(arg cmd_host_name) $(arg bridge_name)"/>
     
+  <node pkg="async_stream" type="async_streaming_server_lidar" name="async_streaming_server_lidar" output="screen" args="$(arg host_name) $(arg cmd_host_name) $(arg bridge_name)"/>
 </launch>

@@ -15,14 +15,9 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   roslib
   morai_msgs
-  cyber_perception_msgs
-  perception_msgs
   geometry_msgs
-  utils
-  map
   tf
   autoware_msgs
-  control_msgs
 )
 
 catkin_package(
@@ -57,6 +52,7 @@ include_directories(
   src
   ${PROJECT_SOURCE_DIR}/fmi-standard/headers
   ${PROJECT_SOURCE_DIR}/src/OSMPDummySensor
+  lib
 )
 
 set(OPEN_SIMULATION_INTERFACE_SRCS_PATH "${PROJECT_SOURCE_DIR}/open-simulation-interface")
@@ -192,6 +188,9 @@ foreach(_target
       apollo_protos
       sensorview_grpc_proto
       open_simulation_interface_static
+      ${PROJECT_SOURCE_DIR}/lib/libhdmap_common.so
+      ${PROJECT_SOURCE_DIR}/lib/libutils.so
+      ${PROJECT_SOURCE_DIR}/lib/libprotos.so
   )
 endforeach()
 
@@ -259,6 +258,7 @@ pybind11_add_module(osi_bridge
   src/keti_ros_bridge.cc
   src/keti_ros_converter.cc
   src/morai_ros_bridge.cc
+  ${OSMP_srcs}
 )
 
 target_link_libraries(osi_bridge
@@ -266,6 +266,9 @@ target_link_libraries(osi_bridge
     ${_GRPC_GRPCPP}
     sensorview_grpc_proto
     open_simulation_interface_static
+    ${PROJECT_SOURCE_DIR}/lib/libhdmap_common.so
+    ${PROJECT_SOURCE_DIR}/lib/libutils.so
+    ${PROJECT_SOURCE_DIR}/lib/libprotos.so
 )
 
 # Usage for Csharp
@@ -278,10 +281,14 @@ add_library(client SHARED
   src/keti_ros_converter.cc
   src/morai_ros_bridge.cc
   src/osi_server.cc
+  ${OSMP_srcs}
 )
 target_link_libraries(client
   ${catkin_LIBRARIES}
   ${_GRPC_GRPCPP}
   sensorview_grpc_proto
   open_simulation_interface_static
+  ${PROJECT_SOURCE_DIR}/lib/libhdmap_common.so
+  ${PROJECT_SOURCE_DIR}/lib/libutils.so
+  ${PROJECT_SOURCE_DIR}/lib/libprotos.so
 )

@@ -1,0 +1,3 @@
+<launch>
+  <rosparam command="load" file="$(find async_stream)/src/config/param_set.yaml" />
+</launch>
