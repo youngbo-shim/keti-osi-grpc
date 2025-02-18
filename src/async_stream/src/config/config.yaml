@@ -1,6 +1,6 @@
-host_name: "localhost:50051"
+# host_name: "localhost:50051"
 
-bridge_name: "autoware"
+# bridge_name: "autoware"
 
 camera_param:
   - ["camera0/image_jpeg/compressed", "camera0"]
@@ -8,8 +8,8 @@ camera_param:
 
 lidar_param:
   - ["/lidar3D_0", "lidar0"]
-  - ["/lidar3D_1", "lidar1"]
+  # - ["/lidar3D_1", "lidar1"]
 
 radar_param:
-  - ["/radar0", "radar0"]
-  - ["/radar1", "radar1"]
+  - ["/radar", "radar"]
+  # - ["/radar1", "radar1"]

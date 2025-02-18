@@ -79,7 +79,7 @@ public:
     for (size_t i = 0; i < radar_param.size(); i++){
       sub_radar_topics_[i] = nh_.subscribe<morai_msgs::RadarDetections>(radar_param[i][0], 1, 
                                                                   boost::bind(&SensorViewRPCImpl::CallbackRadarDetections, this, _1, i));
-      // InitTFTable(radar_param[i][1], i, RADAR);
+      InitTFTable(radar_param[i][1], i, RADAR);
     }
 
     sub_morai_vehicle_state_ = nh_.subscribe("/Ego_topic", 1, &SensorViewRPCImpl::CallbackVehicleState, this);
